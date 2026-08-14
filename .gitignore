@@ -1,0 +1,6 @@
+SyncThings.spec
+sync_things_profile.json
+release/
+dist/
+build/
+.claude/
