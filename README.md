@@ -16,7 +16,7 @@ SyncThings is a simple, lightweight, and modern cross-platform application to se
 You can download the latest version from the [Releases page](../../releases). 
 Pre-built binaries are available for Windows. 
 
-1. Download the `SyncThings-Windows.zip` file.
+1. Download the `SyncThings-Windows.exe` file.
 2. Extract the archive to any folder.
 3. Run `SyncThings.exe`.
 
