@@ -11,6 +11,7 @@ import uuid
 import json
 import os
 import webbrowser
+import logging
 from PIL import Image
 from datetime import datetime
 
@@ -99,6 +100,13 @@ class SyncThingsApp(ctk.CTk):
         self.title("Syncthings")
         self.geometry("1000x700")
         self.minsize(900, 600)
+        self.state("zoomed")  # Force maximized mode
+        self.after(200, lambda: self.state("zoomed")) # Ensure it applies
+
+        # State
+        self.app_id = str(uuid.uuid4())
+        self.default_name = f"User_{self.app_id[:6]}"
+        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state = profile.load_profile(self.default_name)
 
         # Set App Icon
         icon_path = utils.resource_path("app.ico")
@@ -113,15 +121,9 @@ class SyncThingsApp(ctk.CTk):
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             except Exception as e:
                 print(f"Failed to set icon: {e}")
-
-        # State
-        self.app_id = str(uuid.uuid4())
-        self.lang = "en"
-        self.appearance_mode = "Dark"
         ctk.set_appearance_mode(self.appearance_mode)
 
-        self.default_name = f"User_{self.app_id[:6]}"
-        self.profile_name, self.avatar_path, self.avatar_b64 = profile.load_profile(self.default_name)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # Managers
         self.clipboard_manager = clipboard.ClipboardManager()
@@ -133,7 +135,8 @@ class SyncThingsApp(ctk.CTk):
                 "on_connection_success": self.on_connection_success,
                 "on_data_received": self.on_data_received,
                 "on_error": self.on_network_error,
-                "on_progress": self._update_progress
+                "on_progress": lambda c, t: self._update_progress(c, t, "Receiving"),
+                "on_peer_disconnected": self.on_peer_disconnected
             }
         )
         self.network_manager.update_profile_name(self.profile_name, self.avatar_b64)
@@ -279,7 +282,7 @@ class SyncThingsApp(ctk.CTk):
         return frame
 
     def disconnect(self):
-        self.network_manager.disconnect()
+        self.network_manager.disconnect(send_signal=True)
         self.lbl_status.configure(text=utils.format_persian(self.tr("disconnected")), text_color=config.COLORS["ERROR"][1])
         self.btn_disconnect.pack_forget()
         self.log(config.TRANSLATIONS["en"]["disconnected_by_you"])
@@ -376,7 +379,7 @@ class SyncThingsApp(ctk.CTk):
         self.btn_save_settings = ctk.CTkButton(frame, text="Save Changes", font=self.get_main_font(15, "bold"), command=self.save_settings)
         self.btn_save_settings.pack(pady=10)
 
-        self.btn_fix_firewall = ctk.CTkButton(frame, text=utils.format_persian(self.tr("fix_firewall", default="Fix Firewall Issues")),
+        self.btn_fix_firewall = ctk.CTkButton(frame, text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")),
                                               font=self.get_main_font(15, "bold"), fg_color=config.COLORS["WARNING"], hover_color="#D97706", command=self.fix_firewall_ui)
         self.btn_fix_firewall.pack(pady=(30, 10))
 
@@ -454,7 +457,11 @@ class SyncThingsApp(ctk.CTk):
         self.frames[name].grid(row=0, column=0, sticky="nsew")
 
     def log(self, msg):
+        logging.info(msg)
         timestamp = datetime.now().strftime("[%H:%M:%S]")
+        self.after(0, lambda: self._update_log_ui(timestamp, msg))
+
+    def _update_log_ui(self, timestamp, msg):
         self.log_box.configure(state="normal")
         self.log_box.insert("end", f"{timestamp} {msg}\n")
         self.log_box.see("end")
@@ -466,6 +473,12 @@ class SyncThingsApp(ctk.CTk):
         else:
             self.appearance_mode = "Dark"
         ctk.set_appearance_mode(self.appearance_mode)
+        import profile
+        try:
+            current_state = "zoomed" if self.state() == "zoomed" else "normal"
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state)
+        except:
+            pass
 
     def toggle_lang(self):
         if self.lang == "en":
@@ -474,6 +487,12 @@ class SyncThingsApp(ctk.CTk):
             self.lang = "en"
         self.update_sidebar_text()
         self.update_ui_text()
+        import profile
+        try:
+            current_state = "zoomed" if self.state() == "zoomed" else "normal"
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state)
+        except:
+            pass
 
     def update_sidebar_text(self):
         self.nav_dash.configure(text=utils.format_persian(self.tr("dashboard")))
@@ -507,7 +526,7 @@ class SyncThingsApp(ctk.CTk):
         if hasattr(self, 'btn_upload_avatar'):
              self.btn_upload_avatar.configure(text=utils.format_persian(self.tr("upload_avatar", default="Upload Image")), font=self.get_main_font(15, "bold"))
         if hasattr(self, 'btn_fix_firewall'):
-             self.btn_fix_firewall.configure(text=utils.format_persian(self.tr("fix_firewall", default="Fix Firewall Issues")), font=self.get_main_font(15, "bold"))
+             self.btn_fix_firewall.configure(text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")), font=self.get_main_font(15, "bold"))
         if hasattr(self, 'name_entry'):
              self.name_entry.configure(placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
 
@@ -716,17 +735,27 @@ class SyncThingsApp(ctk.CTk):
     def on_network_error(self, err_msg):
         self.after(0, self._handle_network_error, err_msg)
 
+    def on_peer_disconnected(self):
+        self.after(0, self._handle_peer_disconnected)
+
+    def _handle_peer_disconnected(self):
+        self.log(config.TRANSLATIONS["en"]["connection_lost"])
+        self.lbl_status.configure(text=utils.format_persian(self.tr("disconnected")), text_color=config.COLORS["ERROR"][1])
+        self.btn_disconnect.pack_forget()
+        self.clipboard_manager.stop_monitoring()
+        self.refresh_discovery()
+
     def _handle_network_error(self, err_msg):
         self.log(f"Error: {err_msg}")
         self.lbl_status.configure(text=utils.format_persian(self.tr("disconnected")), text_color=config.COLORS["ERROR"][1])
         self.clipboard_manager.stop_monitoring()
 
-    def _update_progress(self, current, total):
+    def _update_progress_simple(self, current, total):
         if total > 0:
             percentage = current / total
-            self.after(0, self._set_progress, percentage)
+            self.after(0, self._set_progress_simple, percentage)
 
-    def _set_progress(self, percentage):
+    def _set_progress_simple(self, percentage):
         if percentage < 1.0:
             if not self.progress_bar.winfo_viewable():
                 self.progress_bar.pack(pady=10)
@@ -742,43 +771,141 @@ class SyncThingsApp(ctk.CTk):
             return
 
         if dtype == "text":
+            logging.info("Clipboard change detected: Text")
             self.log(config.TRANSLATIONS["en"]["sending_text"])
-            self.network_manager.send_data_packet(config.TYPE_TEXT, data.encode("utf-8"), progress_callback=self._update_progress)
+            self.network_manager.send_data_packet(config.TYPE_TEXT, data.encode("utf-8"), progress_callback=lambda c, t: self._update_progress(c, t, "Sending"))
         elif dtype == "image":
+            logging.info("Clipboard change detected: Image")
             self.log(config.TRANSLATIONS["en"]["sending_image"])
             import io
             out = io.BytesIO()
             data.convert("RGB").save(out, format="JPEG")
-            self.network_manager.send_data_packet(config.TYPE_IMAGE, out.getvalue(), progress_callback=self._update_progress)
+            self.network_manager.send_data_packet(config.TYPE_IMAGE, out.getvalue(), progress_callback=lambda c, t: self._update_progress(c, t, "Sending"))
         elif dtype == "files":
-            self.log(config.TRANSLATIONS["en"]["sending_file"])
+            logging.info(f"Clipboard change detected: Files. Starting background thread for processing...")
+            import threading
+            threading.Thread(target=self._process_and_send_files, args=(data,), daemon=True).start()
+
+    def _process_and_send_files(self, data):
+        try:
             import zipfile
             import io
-            out = io.BytesIO()
-            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-                for path in data:
-                    if os.path.isfile(path):
-                        zf.write(path, os.path.basename(path))
-                    elif os.path.isdir(path):
-                        for root, _, files in os.walk(path):
-                            for file in files:
-                                file_path = os.path.join(root, file)
-                                arcname = os.path.relpath(file_path, os.path.dirname(path))
-                                zf.write(file_path, arcname)
-            self.network_manager.send_data_packet(config.TYPE_FILES, out.getvalue(), progress_callback=self._update_progress)
-            self.log(config.TRANSLATIONS["en"]["file_sent_success"])
+            import tempfile
+            import config
+            import utils
+            import os
 
-    def _update_progress(self, current, total):
-        self.after(0, self._set_progress, current, total)
+            # Pre-calculate total size
+            total_bytes = 0
+            files_to_zip = []
 
-    def _set_progress(self, current, total):
-        if total == 0:
-            return
-        pct = current / total
+            for path in data:
+                if os.path.isfile(path):
+                    size = os.path.getsize(path)
+                    total_bytes += size
+                    files_to_zip.append((path, os.path.basename(path), size))
+                elif os.path.isdir(path):
+                    for root, _, files in os.walk(path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            size = os.path.getsize(file_path)
+                            total_bytes += size
+                            arcname = os.path.relpath(file_path, os.path.dirname(path))
+                            files_to_zip.append((file_path, arcname, size))
 
-        import time
-        if not hasattr(self, '_transfer_start_time') or current == 0:
+            # Direct transfer optimization for a single file
+            if len(files_to_zip) == 1 and os.path.isfile(files_to_zip[0][0]):
+                single_file_path = files_to_zip[0][0]
+                self.log(f"{config.TRANSLATIONS['en']['sending_file']} (Direct single file, {total_bytes / 1048576:.2f} MB)")
+                logging.info(f"Bypassing zip for single file: {single_file_path}")
+
+                self.after(0, lambda: self.progress_bar.configure(progress_color=config.COLORS["ACCENT"][self._get_appearance_mode() == "Light" and 0 or 1]))
+
+                # Send a metadata packet first so receiver knows the filename
+                metadata = json.dumps({"filename": files_to_zip[0][1]}).encode('utf-8')
+                self.network_manager.send_data_packet(config.TYPE_SINGLE_FILE_META, metadata)
+
+                # Send the actual file data directly
+                success = self.network_manager.send_file_packet(config.TYPE_SINGLE_FILE, single_file_path, progress_callback=lambda c, t: self._update_progress(c, t, "Sending"))
+
+                if success:
+                    self.log(config.TRANSLATIONS["en"]["file_sent_success"])
+                    logging.info("Network transfer completed successfully (Single File).")
+                else:
+                    self.log("File transfer failed.")
+                    logging.error("Network transfer failed.")
+                return
+
+            self.log(f"{config.TRANSLATIONS['en']['sending_file']} ({len(files_to_zip)} files, {total_bytes / 1048576:.2f} MB)")
+            logging.info(f"Starting zip process for {len(files_to_zip)} files ({total_bytes / 1048576:.2f} MB)")
+
+            processed_bytes = 0
+
+            # Set to green for compression
+            self.after(0, lambda: self.progress_bar.configure(progress_color=config.COLORS["SUCCESS"][self._get_appearance_mode() == "Light" and 0 or 1]))
+
+            # Write ZIP directly to a temp file on disk instead of BytesIO
+            temp_dir = os.path.join(os.path.expanduser("~"), "Downloads", "SyncThings", "Temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_zip_path = tempfile.mktemp(dir=temp_dir, suffix=".zip")
+            logging.info(f"Using temporary zip path: {temp_zip_path}")
+
+            with zipfile.ZipFile(temp_zip_path, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
+                for file_path, arcname, size in files_to_zip:
+                    # Use native write which is heavily optimized rather than slow Python chunk loops
+                    zf.write(file_path, arcname)
+                    processed_bytes += size
+                    if total_bytes > 0:
+                        self._update_progress(processed_bytes, total_bytes, "Compressing")
+
+            logging.info(f"Zipping complete. Temp file size: {os.path.getsize(temp_zip_path) / 1048576:.2f} MB. Starting network transfer...")
+
+            # Revert to blue for network transfer
+            self.after(0, lambda: self.progress_bar.configure(progress_color=config.COLORS["ACCENT"][self._get_appearance_mode() == "Light" and 0 or 1]))
+            success = self.network_manager.send_file_packet(config.TYPE_FILES, temp_zip_path, progress_callback=lambda c, t: self._update_progress(c, t, "Sending"))
+
+            try:
+                os.remove(temp_zip_path) # cleanup
+                logging.info(f"Cleaned up temp zip file: {temp_zip_path}")
+            except Exception as e:
+                logging.error(f"Failed to clean up temp zip file: {e}")
+
+            if success:
+                self.log(config.TRANSLATIONS["en"]["file_sent_success"])
+                logging.info("Network transfer completed successfully.")
+            else:
+                self.log("File transfer failed.")
+                logging.error("Network transfer failed.")
+        except Exception as e:
+            self.log(f"Error processing files: {e}")
+            logging.error(f"Exception in _process_and_send_files: {e}", exc_info=True)
+
+    def _update_progress(self, current, total, action="Transferring"):
+        # This is called from the background network thread.
+        # It must NOT call any UI methods or wait for the UI thread.
+        self._current_progress_sent = current
+        self._current_progress_total = total
+        self._current_progress_action = action
+
+        if not hasattr(self, '_ui_polling_active') or not self._ui_polling_active:
+            self._ui_polling_active = True
+            import time
             self._transfer_start_time = time.time()
+            # Start the polling loop safely on the main thread
+            self.after(0, self._poll_ui_progress)
+
+    def _poll_ui_progress(self):
+        if not hasattr(self, '_ui_polling_active') or not self._ui_polling_active:
+            return
+
+        current = getattr(self, '_current_progress_sent', 0)
+        total = getattr(self, '_current_progress_total', 1)
+        action = getattr(self, '_current_progress_action', "Transferring")
+
+        if total == 0:
+            total = 1
+
+        pct = current / total
 
         if not self.progress_bar.winfo_viewable() and pct < 1.0:
             self.progress_stats_frame.pack(fill="x", padx=20, pady=(0, 5))
@@ -786,26 +913,27 @@ class SyncThingsApp(ctk.CTk):
             self.progress_bar.set(0)
 
         self.progress_bar.set(pct)
-        self.lbl_progress_pct.configure(text=f"{int(pct * 100)}%")
+        self.lbl_progress_pct.configure(text=f"{int(pct * 100)}% - {action}...")
 
-        elapsed = time.time() - self._transfer_start_time
+        import time
+        elapsed = time.time() - getattr(self, '_transfer_start_time', time.time())
         if pct > 0:
             total_est = elapsed / pct
             remaining = max(0, total_est - elapsed)
 
-            # format MM:SS
             el_m, el_s = divmod(int(elapsed), 60)
             rem_m, rem_s = divmod(int(remaining), 60)
-            self.lbl_progress_time.configure(text=f"Elapsed: {el_m:02d}:{el_s:02d} | Remaining: {rem_m:02d}:{rem_s:02d}")
 
-        self.update_idletasks()
+            speed_mb = (current / 1048576) / elapsed if elapsed > 0 else 0
+            self.lbl_progress_time.configure(text=f"Elapsed: {el_m:02d}:{el_s:02d} | Remaining: {rem_m:02d}:{rem_s:02d} | Speed: {speed_mb:.1f} MB/s")
 
         if current >= total:
-            # Hide after a small delay
+            self._ui_polling_active = False
             self.after(1000, self.progress_bar.pack_forget)
             self.after(1000, self.progress_stats_frame.pack_forget)
-            if hasattr(self, '_transfer_start_time'):
-                del self._transfer_start_time
+        else:
+            # Poll again in 50ms (20 FPS)
+            self.after(50, self._poll_ui_progress)
 
     # Network Receive Callback
     def on_data_received(self, data_type, data):
@@ -820,16 +948,68 @@ class SyncThingsApp(ctk.CTk):
             self.clipboard_manager.set_clipboard_image(data)
             self.log(config.TRANSLATIONS["en"]["image_received"])
         elif data_type == config.TYPE_FILES:
-            self.clipboard_manager.extract_and_set_files(data)
-            self.log(config.TRANSLATIONS["en"]["file_received"])
-        elif data_type == config.TYPE_PROFILE:
+            # Here 'data' is now the filepath string for the temp zip on disk
+            import os
+            file_size = os.path.getsize(data)
+            self.after(0, lambda: self.progress_bar.configure(progress_color=config.COLORS["SUCCESS"][self._get_appearance_mode() == "Light" and 0 or 1]))
+            self.clipboard_manager.extract_and_set_files(data, progress_callback=lambda c, t: self._update_progress(c, t, "Decompressing"))
+
             try:
-                info = json.loads(data.decode("utf-8"))
-                peer_name = info.get("name", self.tr("unknown"))
-                self.lbl_status.configure(text=utils.format_persian(self.tr("ready_to_transfer").format(peer_name)))
+                os.remove(data) # clean up the temp streamed zip
             except:
                 pass
 
-if __name__ == "__main__":
+            self.log(f"{config.TRANSLATIONS['en']['file_received']} ({file_size / 1048576:.2f} MB)")
+        elif data_type == config.TYPE_SINGLE_FILE_META:
+            # Metadata packet for single file
+            try:
+                meta = json.loads(data.decode('utf-8'))
+                self._last_single_filename = meta.get('filename', 'received_file')
+            except:
+                self._last_single_filename = 'received_file'
+        elif data_type == config.TYPE_SINGLE_FILE:
+            # Single file bypasses zip
+            import os
+            import tempfile
+
+            file_size = os.path.getsize(data)
+            filename = getattr(self, '_last_single_filename', 'received_file')
+
+            # Move it to a named temp file that clipboard can reference
+            temp_dir = os.path.join(os.path.expanduser("~"), "Downloads", "SyncThings", "Temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            final_path = os.path.join(temp_dir, filename)
+
+            try:
+                # Clean up old file if it exists
+                if os.path.exists(final_path):
+                    os.remove(final_path)
+                os.rename(data, final_path)
+
+                # Put exactly this file on the clipboard
+                self.clipboard_manager.set_clipboard_files([final_path])
+                self.log(f"{config.TRANSLATIONS['en']['file_received']} ({file_size / 1048576:.2f} MB)")
+            except Exception as e:
+                logging.error(f"Failed to process single file receive: {e}")
+        elif data_type == config.TYPE_PROFILE:
+            try:
+                import json
+                info = json.loads(data.decode("utf-8"))
+                peer_name = info.get("name", self.tr("unknown"))
+                self.lbl_status.configure(text=utils.format_persian(self.tr("ready_to_transfer").format(peer_name)))
+            except Exception as e:
+                logging.error(f"Error parsing profile data: {e}")
+
+    def on_closing(self):
+        try:
+            self.network_manager.stop_discovery()
+            self.network_manager.disconnect()
+        except:
+            pass
+        self.destroy()
+
+if __name__ == '__main__':
+    utils.setup_logging()
     app = SyncThingsApp()
     app.mainloop()
+

@@ -46,26 +46,31 @@ class ClipboardManager:
 
     def check_and_send_clipboard(self):
         try:
+            import logging
             win32clipboard.OpenClipboard()
             if win32clipboard.IsClipboardFormatAvailable(win32con.CF_HDROP):
                 paths = win32clipboard.GetClipboardData(win32con.CF_HDROP)
                 win32clipboard.CloseClipboard()
+                logging.info(f"Clipboard read: Found {len(paths)} file(s).")
                 self.callback('files', paths)
                 return
             if win32clipboard.IsClipboardFormatAvailable(win32con.CF_DIB) or win32clipboard.IsClipboardFormatAvailable(win32con.CF_BITMAP):
                 win32clipboard.CloseClipboard()
                 img = ImageGrab.grabclipboard()
                 if isinstance(img, Image.Image):
+                    logging.info("Clipboard read: Found image.")
                     self.callback('image', img)
                 return
             if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
                 text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
                 win32clipboard.CloseClipboard()
+                logging.info("Clipboard read: Found text.")
                 self.callback('text', text)
                 return
             win32clipboard.CloseClipboard()
-        except:
-            pass
+        except Exception as e:
+            import logging
+            logging.error(f"Error reading clipboard: {e}", exc_info=True)
 
     def set_clipboard_text(self, text):
         self.ignore_next = True
@@ -93,14 +98,32 @@ class ClipboardManager:
         except:
             self.ignore_next = False
 
-    def extract_and_set_files(self, zip_bytes):
+    def extract_and_set_files(self, zip_path, progress_callback=None):
         self.ignore_next = True
         try:
+            import logging
             save_dir = os.path.join(os.path.expanduser("~"), "Downloads", "SyncThings", datetime.now().strftime("%Y%m%d_%H%M%S"))
             os.makedirs(save_dir, exist_ok=True)
-            with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
-                zf.extractall(save_dir)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                infolist = zf.infolist()
+                total_bytes = sum(info.file_size for info in infolist)
+                processed_bytes = 0
+
+                logging.info(f"Decompressing {len(infolist)} files to {save_dir} ({total_bytes / 1048576:.2f} MB)")
+
+                for info in infolist:
+                    zf.extract(info, save_dir)
+                    if not info.is_dir():
+                        processed_bytes += info.file_size
+                        if progress_callback:
+                            progress_callback(processed_bytes, total_bytes)
+
             paths = [os.path.abspath(os.path.join(save_dir, n)) for n in os.listdir(save_dir)]
+
+            file_names = ", ".join(os.listdir(save_dir)[:3])
+            if len(os.listdir(save_dir)) > 3:
+                file_names += " and more..."
+            logging.info(f"Files extracted and placed in clipboard: {file_names}")
             stc_dropfiles = struct.pack("5I", struct.calcsize("5I"), 0, 0, 0, 1)
             data = stc_dropfiles + ("\0".join(paths) + "\0\0").encode('utf-16le')
             win32clipboard.OpenClipboard()

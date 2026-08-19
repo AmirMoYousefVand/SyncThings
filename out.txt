@@ -1,0 +1,2 @@
+Time taken: 1.28 seconds
+Speed: 778.30 MB/s

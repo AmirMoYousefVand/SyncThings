@@ -2,8 +2,56 @@
 import socket
 import os
 import sys
+import logging
+import datetime
 import arabic_reshaper
 from bidi.algorithm import get_display
+
+def setup_logging():
+    """Sets up a robust logging system that outputs to a logs folder next to the executable."""
+    # Determine base directory
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.abspath(".")
+
+    logs_dir = os.path.join(base_dir, "logs")
+
+    if not os.path.exists(logs_dir):
+        try:
+            os.makedirs(logs_dir)
+        except Exception:
+            pass # Fail silently if we can't create the folder (e.g., permissions)
+
+    log_filename = datetime.datetime.now().strftime("session_%Y%m%d_%H%M%S.log")
+    log_filepath = os.path.join(logs_dir, log_filename)
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s - %(message)s')
+
+    try:
+        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except Exception:
+        pass # Fail silently if file cannot be created
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    logging.info("--- SyncThings Session Started ---")
+
+def log_memory(stage):
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        mem_mb = process.memory_info().rss / 1048576
+        logging.info(f"[Memory] {stage}: {mem_mb:.2f} MB")
+    except Exception as e:
+        pass
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """

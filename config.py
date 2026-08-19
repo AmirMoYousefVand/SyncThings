@@ -24,6 +24,9 @@ TYPE_TEXT = 1
 TYPE_IMAGE = 2
 TYPE_FILES = 3
 TYPE_PROFILE = 4
+TYPE_SINGLE_FILE = 5
+TYPE_SINGLE_FILE_META = 6
+TYPE_DISCONNECT = 9
 
 # File paths and fonts
 CONFIG_FILE = "sync_things_profile.json"
@@ -65,7 +68,7 @@ TRANSLATIONS = {
         "upload_avatar": "Upload Image",
         "enter_ip": "Enter IP Address",
         "select_image": "Select Profile Image",
-        "fix_firewall": "Fix Firewall Issues",
+        "fix_firewall": "Grant Firewall permission",
         "yes": "Yes",
         "no": "No",
         "ok": "OK",
@@ -124,7 +127,7 @@ TRANSLATIONS = {
         "upload_avatar": "آپلود عکس",
         "enter_ip": "آدرس IP را وارد کنید",
         "select_image": "انتخاب تصویر پروفایل",
-        "fix_firewall": "رفع مشکل فایروال",
+        "fix_firewall": "اعطای دسترسی فایروال",
         "app_name": "سینک / تینگز",
         "yes": "بله",
         "no": "خیر",

@@ -13,6 +13,9 @@ def load_profile(default_name):
     avatar_path = None
     avatar_b64 = None
     mini_avatar_b64 = None
+    theme = "Light"
+    lang = "en"
+    state = "zoomed"
 
     if os.path.exists(CONFIG_FILE):
         try:
@@ -22,16 +25,19 @@ def load_profile(default_name):
                 avatar_path = config.get("avatar", None)
                 avatar_b64 = config.get("avatar_b64", None)
                 mini_avatar_b64 = config.get("mini_avatar_b64", None)
+                theme = config.get("theme", theme)
+                lang = config.get("lang", lang)
+                state = config.get("state", state)
         except Exception:
             pass
 
     if not avatar_b64 and not avatar_path:
         avatar_b64, mini_avatar_b64 = generate_random_avatar()
-        save_profile(profile_name, avatar_path, avatar_b64, mini_avatar_b64)
+        save_profile(profile_name, avatar_path, avatar_b64, mini_avatar_b64, theme, lang, state)
 
-    return profile_name, avatar_path, avatar_b64
+    return profile_name, avatar_path, avatar_b64, theme, lang, state
 
-def save_profile(profile_name, avatar_path, avatar_b64=None, mini_avatar_b64=None):
+def save_profile(profile_name, avatar_path, avatar_b64=None, mini_avatar_b64=None, theme="Light", lang="en", state="zoomed"):
     """Saves profile data to the config file."""
     if mini_avatar_b64 is None and os.path.exists(CONFIG_FILE):
         try:
@@ -53,7 +59,10 @@ def save_profile(profile_name, avatar_path, avatar_b64=None, mini_avatar_b64=Non
         except:
             pass
 
-    config = {"name": profile_name, "avatar": avatar_path, "avatar_b64": avatar_b64, "mini_avatar_b64": mini_avatar_b64}
+    config = {
+        "name": profile_name, "avatar": avatar_path, "avatar_b64": avatar_b64, "mini_avatar_b64": mini_avatar_b64,
+        "theme": theme, "lang": lang, "state": state
+    }
     try:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False)

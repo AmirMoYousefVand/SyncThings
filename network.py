@@ -40,7 +40,11 @@ class NetworkManager:
         self.tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.tcp_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        except Exception:
+            # TCP Optimization for listen socket - inherit to accepted sockets
+            self.tcp_server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception as e:
+            import logging
+            logging.error(f"Error setting TCP socket options on server: {e}")
             pass
         self.tcp_server.bind(("0.0.0.0", TCP_PORT))
         self.tcp_server.listen(5)
@@ -143,10 +147,27 @@ class NetworkManager:
             except Exception:
                 pass
 
+    def _optimize_socket(self, conn):
+        try:
+            # TCP Optimization for sending/receiving on accepted connection
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            bufsize = 8388608  # 8MB
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, bufsize)
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, bufsize)
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to set optimized socket buffer options: {e}")
+
     def _tcp_listen_thread(self):
         while True:
             try:
                 conn, addr = self.tcp_server.accept()
+                try:
+                    self._optimize_socket(conn)
+                except Exception as e:
+                    import logging
+                    logging.error(f"Failed to set accepted socket buffer options: {e}")
+
                 if not self.connected:
                     msg = conn.recv(1024)
                     if msg.startswith(b'PAIR_REQ'):
@@ -169,6 +190,12 @@ class NetworkManager:
     def initiate_connection(self, ip, peer_name="Unknown"):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                self._optimize_socket(sock)
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to set socket buffer options: {e}")
+
             sock.settimeout(5)
             sock.connect((ip, TCP_PORT))
             sock.settimeout(None)
@@ -222,7 +249,14 @@ class NetworkManager:
 
         threading.Thread(target=self._receive_data_thread, args=(sock,), daemon=True).start()
 
-    def disconnect(self):
+    def disconnect(self, send_signal=False):
+        if send_signal and self.connected and self.peer_socket:
+            try:
+                # Send TYPE_DISCONNECT (9) with empty payload
+                header = struct.pack('>BQ', 9, 0)
+                self.peer_socket.sendall(header)
+            except:
+                pass
         self.connected = False
         if self.peer_socket:
             try:
@@ -230,6 +264,66 @@ class NetworkManager:
             except:
                 pass
         self.peer_socket = None
+
+    def send_file_packet(self, data_type, filepath, progress_callback=None):
+        if not self.connected or not self.peer_socket:
+            return False
+        import os
+        total = os.path.getsize(filepath)
+        try:
+            header = struct.pack('>BQ', data_type, total)
+            self.peer_socket.sendall(header)
+
+            chunk_size = 4194304 # 4MB chunk size
+
+            import logging
+            import time
+            logging.info(f"Sending file packet type {data_type} from disk (Size: {total/1048576:.2f} MB)")
+
+            sent = 0
+            last_cb_time = 0
+            logging.info("Socket ready, starting to send chunks...")
+
+            with open(filepath, 'rb') as f:
+                if hasattr(os, 'sendfile') and os.name != 'nt':
+                    # Unix
+                    while sent < total:
+                        snt = os.sendfile(self.peer_socket.fileno(), f.fileno(), sent, min(total - sent, chunk_size))
+                        if snt == 0:
+                            break
+                        sent += snt
+                        now = time.time()
+                        if progress_callback and (now - last_cb_time > 0.05 or sent >= total):
+                            progress_callback(sent, total)
+                            last_cb_time = now
+                else:
+                    # Windows or fallback
+                    # Python's socket.sendfile without offset blocks the whole thread and breaks the UI,
+                    # and falls back to a slow internal method anyway that causes speed drops.
+                    # We use a highly optimized memoryview loop instead to avoid memory allocation overhead
+                    # while maintaining granular UI updates.
+                    buffer = bytearray(chunk_size)
+                    view = memoryview(buffer)
+                    while sent < total:
+                        bytes_read = f.readinto(buffer)
+                        if not bytes_read:
+                            break
+                        self.peer_socket.sendall(view[:bytes_read])
+                        sent += bytes_read
+                        now = time.time()
+                        if progress_callback and (now - last_cb_time > 0.05 or sent >= total):
+                            progress_callback(sent, total)
+                            last_cb_time = now
+
+            logging.info("Finished sending all chunks.")
+            return True
+        except Exception as e:
+            import logging
+            logging.error(f"Error sending file packet: {e}", exc_info=True)
+            self.disconnect()
+            if 'on_error' in self.callbacks:
+                self.callbacks['on_error']("Connection lost.")
+            return False
 
     def send_data_packet(self, data_type, data, progress_callback=None):
         if not self.connected or not self.peer_socket:
@@ -239,16 +333,30 @@ class NetworkManager:
             self.peer_socket.sendall(header)
 
             # Send data in chunks for progress bar
-            chunk_size = 65536
             total = len(data)
+            if total <= 1048576:         # <= 1MB
+                chunk_size = 65536       # 64KB
+            elif total <= 52428800:      # <= 50MB
+                chunk_size = 1048576     # 1MB
+            else:
+                chunk_size = 4194304     # 4MB
+
+            import logging
+            logging.info(f"Sending packet type {data_type} (Size: {total/1048576:.2f} MB, Chunking: {chunk_size/1024:.0f} KB)")
+
             sent = 0
+            import time
+            last_cb_time = 0
 
             while sent < total:
                 chunk = data[sent:sent+chunk_size]
-                self.peer_socket.send(chunk)
+                # CRITICAL: Must use sendall to prevent silent data loss if OS buffer is full
+                self.peer_socket.sendall(chunk)
                 sent += len(chunk)
-                if progress_callback:
+                now = time.time()
+                if progress_callback and (now - last_cb_time > 0.05 or sent >= total):
                     progress_callback(sent, total)
+                    last_cb_time = now
 
             return True
         except:
@@ -264,25 +372,93 @@ class NetworkManager:
                 if not header:
                     break
                 data_type, size = struct.unpack('>BQ', header)
+                if data_type == 9: # TYPE_DISCONNECT
+                    if 'on_peer_disconnected' in self.callbacks:
+                        self.callbacks['on_peer_disconnected']()
+                    break
+
                 if size > 0:
+                    import config
                     progress_cb = self.callbacks.get('on_progress')
-                    data = self.recvall(conn, size, progress_callback=progress_cb)
-                    if data:
-                        if 'on_data_received' in self.callbacks:
-                            self.callbacks['on_data_received'](data_type, data)
+                    if data_type == config.TYPE_FILES or data_type == config.TYPE_SINGLE_FILE:
+                        import tempfile
+                        import os
+                        temp_file = tempfile.mktemp(suffix=".tmp")
+                        success = self.recv_to_file(conn, size, temp_file, progress_callback=progress_cb)
+                        if success:
+                            if 'on_data_received' in self.callbacks:
+                                self.callbacks['on_data_received'](data_type, temp_file)
+                    else:
+                        data = self.recvall(conn, size, progress_callback=progress_cb)
+                        if data:
+                            if 'on_data_received' in self.callbacks:
+                                self.callbacks['on_data_received'](data_type, data)
             except:
                 break
         self.disconnect()
         if 'on_error' in self.callbacks:
             self.callbacks['on_error']("Connection lost.")
 
+    def recv_to_file(self, sock, n, filepath, progress_callback=None):
+        import logging
+        import time
+        chunk_size = 4194304 # 4MB chunk
+        logging.info(f"Receiving streaming file (Size: {n/1048576:.2f} MB, Chunking: {chunk_size/1024:.0f} KB) straight to {filepath}")
+
+        received = 0
+        last_cb_time = 0
+
+        buffer = bytearray(chunk_size)
+        view = memoryview(buffer)
+
+        with open(filepath, 'wb') as f:
+            while received < n:
+                # Accumulate bytes in the 4MB buffer before writing to disk
+                # This prevents thousands of tiny 1.5KB disk writes which kills SSD IOPS
+                bytes_accumulated = 0
+                target_read = min(n - received, chunk_size)
+
+                while bytes_accumulated < target_read:
+                    bytes_recv = sock.recv_into(view[bytes_accumulated:target_read], target_read - bytes_accumulated)
+                    if not bytes_recv:
+                        logging.error("Socket closed prematurely during receive.")
+                        return False
+                    bytes_accumulated += bytes_recv
+
+                # Now do one massive, highly efficient write to the SSD
+                f.write(view[:bytes_accumulated])
+                received += bytes_accumulated
+
+                now = time.time()
+                if progress_callback and (now - last_cb_time > 0.05 or received >= n):
+                    progress_callback(received, n)
+                    last_cb_time = now
+
+        logging.info("Finished receiving all chunks.")
+        return True
+
     def recvall(self, sock, n, progress_callback=None):
-        data = bytearray()
-        while len(data) < n:
-            packet = sock.recv(min(n - len(data), 65536))
-            if not packet:
+        import logging
+        if n <= 1048576:           # <= 1MB
+            chunk_size = 65536     # 64KB
+        elif n <= 52428800:        # <= 50MB
+            chunk_size = 1048576   # 1MB
+        else:
+            chunk_size = 4194304   # 4MB
+
+        logging.info(f"Receiving payload (Size: {n/1048576:.2f} MB, Chunking: {chunk_size/1024:.0f} KB) using zero-copy memoryview")
+
+        data = bytearray(n)
+        view = memoryview(data)
+        received = 0
+
+        while received < n:
+            to_read = min(n - received, chunk_size)
+            packet_len = sock.recv_into(view[received:received+to_read], to_read)
+            if packet_len == 0:
                 return None
-            data.extend(packet)
+            received += packet_len
             if progress_callback:
-                progress_callback(len(data), n)
+                progress_callback(received, n)
+
         return data
