@@ -144,8 +144,10 @@ def setup_direct_lan_ip():
         is_admin = False
 
     try:
-        # Use PowerShell to robustly find physical Ethernet adapters where the link is Up
-        ps_cmd = "$adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.MediaType -eq '802.3' }; if ($adapters) { $adapters.Name }"
+        # Use PowerShell to robustly find Ethernet adapters (including USB-C dongles)
+        # We drop -Physical because USB dongles are often not marked as physical.
+        # We drop Status -eq 'Up' because direct cables often stay 'Identifying' or 'Disconnected' until an IP is set.
+        ps_cmd = "(Get-NetAdapter | Where-Object { $_.InterfaceDescription -match 'Ethernet|GbE|Realtek|Intel|Killer|USB|LAN' -and $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless|Bluetooth|Virtual|VMware|Hyper-V|TAP' } | Select-Object -First 1).Name"
 
         # Hide console window
         startupinfo = subprocess.STARTUPINFO()
@@ -153,13 +155,10 @@ def setup_direct_lan_ip():
 
         result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, startupinfo=startupinfo)
 
-        adapter_names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        adapter_name = result.stdout.strip()
 
-        if not adapter_names:
-            return False, "Could not find an active physical Ethernet cable connection. Make sure the cable is plugged in."
-
-        # Pick the first active physical ethernet adapter
-        adapter_name = adapter_names[0]
+        if not adapter_name:
+            return False, "Could not find an Ethernet adapter. Make sure the cable or USB adapter is plugged into the computer."
 
         ip_octet = random.randint(10, 250)
         ip_addr = f"192.168.137.{ip_octet}"
