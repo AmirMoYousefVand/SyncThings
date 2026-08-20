@@ -1086,9 +1086,12 @@ class SyncThingsApp(ctk.CTk):
         elif data_type == config.TYPE_SINGLE_FILE_META:
             # Metadata packet for single file
             try:
+                import json
                 meta = json.loads(data.decode('utf-8'))
                 self._last_single_filename = meta.get('filename', 'received_file')
-            except:
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to parse single file metadata: {e}")
                 self._last_single_filename = 'received_file'
         elif data_type == config.TYPE_SINGLE_FILE:
             # Single file bypasses zip
