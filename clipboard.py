@@ -98,6 +98,24 @@ class ClipboardManager:
         except:
             self.ignore_next = False
 
+    def set_clipboard_files(self, paths):
+        """Sets a list of file paths directly to the Windows clipboard."""
+        self.ignore_next = True
+        try:
+            import logging
+            stc_dropfiles = struct.pack("5I", struct.calcsize("5I"), 0, 0, 0, 1)
+            data = stc_dropfiles + ("\0".join(paths) + "\0\0").encode('utf-16le')
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32con.CF_HDROP, data)
+            win32clipboard.CloseClipboard()
+            self.last_seq_num = win32clipboard.GetClipboardSequenceNumber()
+            logging.info(f"Files placed in clipboard: {paths}")
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to set clipboard files: {e}")
+            self.ignore_next = False
+
     def extract_and_set_files(self, zip_path, progress_callback=None):
         self.ignore_next = True
         try:

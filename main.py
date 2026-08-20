@@ -158,6 +158,9 @@ class SyncThingsApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
+        # Load Icons
+        self._load_icons()
+
         self.setup_sidebar()
         self.setup_main_area()
 
@@ -166,6 +169,41 @@ class SyncThingsApp(ctk.CTk):
 
         # Start Discovery
         self.network_manager.start_discovery()
+
+    def _load_icons(self):
+        try:
+            from PIL import Image
+            import os
+            def get_icon(name):
+                # The user requested that all icons be white regardless of the theme
+                # We saved the white icons as '_light.png' in the fetch script
+                return ctk.CTkImage(
+                    light_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
+                    dark_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
+                    size=(20, 20)
+                )
+
+            self.icon_dash = get_icon("dash")
+            self.icon_connect = get_icon("connect")
+            self.icon_settings = get_icon("settings")
+            self.icon_github = get_icon("github")
+            self.icon_scan = get_icon("scan")
+            self.icon_plug = get_icon("plug")
+            self.icon_rand = get_icon("rand")
+            self.icon_upload = get_icon("upload")
+
+            self.icon_disconnect = get_icon("disconnect")
+            self.icon_refresh = get_icon("refresh")
+            self.icon_firewall = get_icon("firewall")
+            self.icon_lan = get_icon("lan")
+            self.icon_link = get_icon("link")
+            self.icon_trash = get_icon("trash")
+
+            self._icons_loaded = True
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to load icons: {e}")
+            self._icons_loaded = False
 
     def get_main_font(self, size, weight="normal"):
         return (config.FONT_EN if self.lang == "en" else config.FONT_FA, size, weight)
@@ -183,17 +221,24 @@ class SyncThingsApp(ctk.CTk):
         self.title_lbl.grid(row=0, column=0, padx=20, pady=(30, 20))
 
         # Navigation
-        self.nav_dash = ctk.CTkButton(self.sidebar_frame, text="Dashboard", font=self.get_main_font(15, "bold"), command=lambda: self.show_frame("dashboard"))
+        self.nav_dash = ctk.CTkButton(self.sidebar_frame, text="Dashboard", font=self.get_main_font(15, "bold"),
+                                      image=self.icon_dash if self._icons_loaded else None, compound="left", anchor="w",
+                                      command=lambda: self.show_frame("dashboard"))
         self.nav_dash.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
 
-        self.nav_connect = ctk.CTkButton(self.sidebar_frame, text="Search & Connect", font=self.get_main_font(15, "bold"), command=lambda: self.show_frame("connect"))
+        self.nav_connect = ctk.CTkButton(self.sidebar_frame, text="Search & Connect", font=self.get_main_font(15, "bold"),
+                                         image=self.icon_connect if self._icons_loaded else None, compound="left", anchor="w",
+                                         command=lambda: self.show_frame("connect"))
         self.nav_connect.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
 
-        self.nav_settings = ctk.CTkButton(self.sidebar_frame, text="Settings", font=self.get_main_font(15, "bold"), command=lambda: self.show_frame("settings"))
+        self.nav_settings = ctk.CTkButton(self.sidebar_frame, text="Settings", font=self.get_main_font(15, "bold"),
+                                          image=self.icon_settings if self._icons_loaded else None, compound="left", anchor="w",
+                                          command=lambda: self.show_frame("settings"))
         self.nav_settings.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
         # GitHub Button
         self.btn_github = ctk.CTkButton(self.sidebar_frame, text="GitHub", font=self.get_main_font(14, "bold"),
+                                        image=self.icon_github if self._icons_loaded else None, compound="left",
                                         fg_color=config.COLORS["MUTED"], hover_color=config.COLORS["CARD"][1],
                                         command=lambda: __import__('webbrowser').open("https://github.com/AmirMoYousefVand/SyncThings.git"))
         self.btn_github.grid(row=4, column=0, padx=20, pady=(10, 0), sticky="s")
@@ -248,7 +293,9 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_ip = ctk.CTkLabel(self.status_card, text=f"{utils.format_persian(self.tr('your_ip', default='Your IP:'))} {self.get_primary_ip()}", font=self.get_main_font(14, "bold"))
         self.lbl_ip.pack(pady=(0, 10))
 
-        self.btn_disconnect = ctk.CTkButton(self.status_card, text=utils.format_persian(self.tr("disconnect", default="Disconnect")), font=self.get_main_font(15, "bold"), fg_color=config.COLORS["ERROR"], hover_color="#B91C1C", command=self.disconnect)
+        self.btn_disconnect = ctk.CTkButton(self.status_card, text=utils.format_persian(self.tr("disconnect", default="Disconnect")), font=self.get_main_font(15, "bold"),
+                                            image=self.icon_disconnect if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                            fg_color=config.COLORS["ERROR"], hover_color="#B91C1C", command=self.disconnect)
         self.btn_disconnect.pack(pady=(0, 15))
         self.btn_disconnect.pack_forget() # Hide initially
 
@@ -316,7 +363,9 @@ class SyncThingsApp(ctk.CTk):
         qr_scan_card = ctk.CTkFrame(qr_main_frame, corner_radius=15, fg_color=config.COLORS["CARD"])
         qr_scan_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
-        self.btn_scan = ctk.CTkButton(qr_scan_card, text=utils.format_persian(self.tr("scan_qr", default="Scan QR Code")), font=self.get_main_font(15, "bold"), command=self.toggle_qr_scanner)
+        self.btn_scan = ctk.CTkButton(qr_scan_card, text=utils.format_persian(self.tr("scan_qr", default="Scan QR Code")), font=self.get_main_font(15, "bold"),
+                                      image=self.icon_scan if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                      command=self.toggle_qr_scanner)
         self.btn_scan.pack(pady=10)
 
         self.cam_lbl = ctk.CTkLabel(qr_scan_card, text="")
@@ -334,7 +383,9 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_found = ctk.CTkLabel(search_header_frame, text=utils.format_persian(self.tr("devices_found", default="Devices found on network:")), font=self.get_main_font(16, "bold"))
         self.lbl_found.pack(side="left")
 
-        self.btn_refresh = ctk.CTkButton(search_header_frame, text=utils.format_persian(self.tr("search_network", default="Search Network")), width=120, font=self.get_main_font(15, "bold"), fg_color=config.COLORS["ACCENT"], command=self.refresh_discovery)
+        self.btn_refresh = ctk.CTkButton(search_header_frame, text=utils.format_persian(self.tr("search_network", default="Search Network")), width=120, font=self.get_main_font(15, "bold"),
+                                         image=self.icon_refresh if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                         fg_color=config.COLORS["ACCENT"], command=self.refresh_discovery)
         self.btn_refresh.pack(side="right")
 
         self.peer_list_frame = ctk.CTkScrollableFrame(conn_area, fg_color="transparent")
@@ -346,7 +397,9 @@ class SyncThingsApp(ctk.CTk):
         self.ip_entry = ctk.CTkEntry(manual_frame, placeholder_text=utils.format_persian(self.tr("enter_ip", default="Enter IP Address")))
         self.ip_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
-        self.btn_manual_conn = ctk.CTkButton(manual_frame, text=utils.format_persian(self.tr("connect", default="Connect")), font=self.get_main_font(15, "bold"), command=self.manual_connect)
+        self.btn_manual_conn = ctk.CTkButton(manual_frame, text=utils.format_persian(self.tr("connect", default="Connect")), font=self.get_main_font(15, "bold"),
+                                             image=self.icon_link if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                             command=self.manual_connect)
         self.btn_manual_conn.pack(side="right")
 
         return frame
@@ -366,10 +419,14 @@ class SyncThingsApp(ctk.CTk):
         btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
         btn_frame.pack(pady=(0, 20))
 
-        self.btn_rand_avatar = ctk.CTkButton(btn_frame, text=utils.format_persian(self.tr("random_avatar", default="Generate Random Avatar")), font=self.get_main_font(15, "bold"), command=self.generate_random_avatar_ui)
+        self.btn_rand_avatar = ctk.CTkButton(btn_frame, text=utils.format_persian(self.tr("random_avatar", default="Generate Random Avatar")), font=self.get_main_font(15, "bold"),
+                                             image=self.icon_rand if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                             command=self.generate_random_avatar_ui)
         self.btn_rand_avatar.pack(side="left", padx=10)
 
-        self.btn_upload_avatar = ctk.CTkButton(btn_frame, text=utils.format_persian(self.tr("upload_avatar", default="Upload Image")), font=self.get_main_font(15, "bold"), command=self.upload_avatar_ui)
+        self.btn_upload_avatar = ctk.CTkButton(btn_frame, text=utils.format_persian(self.tr("upload_avatar", default="Upload Image")), font=self.get_main_font(15, "bold"),
+                                               image=self.icon_upload if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                               command=self.upload_avatar_ui)
         self.btn_upload_avatar.pack(side="left", padx=10)
 
         self.name_entry = ctk.CTkEntry(frame, placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
@@ -380,17 +437,51 @@ class SyncThingsApp(ctk.CTk):
         self.btn_save_settings.pack(pady=10)
 
         self.btn_fix_firewall = ctk.CTkButton(frame, text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")),
-                                              font=self.get_main_font(15, "bold"), fg_color=config.COLORS["WARNING"], hover_color="#D97706", command=self.fix_firewall_ui)
+                                              font=self.get_main_font(15, "bold"), fg_color=config.COLORS["WARNING"], hover_color="#D97706",
+                                              image=self.icon_firewall if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                              command=self.fix_firewall_ui)
         self.btn_fix_firewall.pack(pady=(30, 10))
 
+        self.btn_setup_lan = ctk.CTkButton(frame, text=utils.format_persian(self.tr("setup_lan_ip", default="Setup Direct LAN IP")),
+                                           font=self.get_main_font(15, "bold"), fg_color=config.COLORS["ACCENT"], hover_color="#0284C7",
+                                           image=self.icon_lan if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                           command=self.setup_lan_ui)
+        self.btn_setup_lan.pack(pady=(10, 10))
+
+        self.btn_clear_cache = ctk.CTkButton(frame, text=utils.format_persian(self.tr("clear_cache", default="Clear Cache")),
+                                             font=self.get_main_font(15, "bold"), fg_color=config.COLORS["MUTED"], hover_color=config.COLORS["CARD"][1],
+                                             image=self.icon_trash if getattr(self, '_icons_loaded', False) else None, compound="left",
+                                             command=self.clear_cache_ui)
+        self.btn_clear_cache.pack(pady=(10, 30))
+
         return frame
+
+    def clear_cache_ui(self):
+        import utils
+        success = utils.clear_temp_cache()
+        if success:
+            self.log("Cache cleared successfully.")
+            RTLMessageDialog(self, self.tr("success", default="Success"), self.tr("cache_cleared"), on_yes=lambda: None, on_no=lambda: None)
+        else:
+            self.log("Failed to clear some cache files.")
+
+    def setup_lan_ui(self):
+        import utils
+        success, message = utils.setup_direct_lan_ip()
+        if success:
+            self.log(f"LAN IP Setup: {message}")
+            RTLMessageDialog(self, self.tr("success", default="Success"), self.tr("lan_ip_success"), on_yes=lambda: None, on_no=lambda: None)
+            self.after(2000, lambda: self.lbl_ip.configure(text=f"{utils.format_persian(self.tr('your_ip'))} {self.get_primary_ip()}"))
+        else:
+            self.log(f"Failed to setup LAN IP: {message}")
+            RTLMessageDialog(self, "Error", self.tr("lan_ip_fail"), on_yes=lambda: None, on_no=lambda: None)
 
     def fix_firewall_ui(self):
         import utils
         success = utils.fix_windows_firewall()
         if success:
             self.log("Firewall rules added successfully!")
-            RTLMessageDialog(self, "Success", "Firewall rules updated. You might need to restart the app.", _yes=lambda: None, _no=lambda: None)
+            RTLMessageDialog(self, "Success", "Firewall rules updated. You might need to restart the app.", on_yes=lambda: None, on_no=lambda: None)
         else:
             self.log("Failed to add firewall rules. Admin privileges required.")
 
@@ -527,6 +618,10 @@ class SyncThingsApp(ctk.CTk):
              self.btn_upload_avatar.configure(text=utils.format_persian(self.tr("upload_avatar", default="Upload Image")), font=self.get_main_font(15, "bold"))
         if hasattr(self, 'btn_fix_firewall'):
              self.btn_fix_firewall.configure(text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")), font=self.get_main_font(15, "bold"))
+        if hasattr(self, 'btn_setup_lan'):
+             self.btn_setup_lan.configure(text=utils.format_persian(self.tr("setup_lan_ip", default="Setup Direct LAN IP")), font=self.get_main_font(15, "bold"))
+        if hasattr(self, 'btn_clear_cache'):
+             self.btn_clear_cache.configure(text=utils.format_persian(self.tr("clear_cache", default="Clear Cache")), font=self.get_main_font(15, "bold"))
         if hasattr(self, 'name_entry'):
              self.name_entry.configure(placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
 
@@ -555,7 +650,16 @@ class SyncThingsApp(ctk.CTk):
 
     def get_primary_ip(self):
         ips = utils.get_local_ips()
-        return ips[0][0] if ips else "127.0.0.1"
+        if not ips:
+            return "127.0.0.1"
+
+        # Prioritize the Direct LAN IP if it exists
+        for ip, _ in ips:
+            if ip.startswith("192.168.137."):
+                return ip
+
+        # Fallback to the first available IP
+        return ips[0][0]
 
     def save_settings(self):
         new_name = self.name_entry.get().strip()
@@ -619,25 +723,44 @@ class SyncThingsApp(ctk.CTk):
 
     # Network Callbacks
     def on_peer_discovered(self, ip, name, peer_id, avatar_mini=""):
-        if ip not in self.discovered_peers:
-            self.discovered_peers[ip] = {"name": name, "avatar": avatar_mini, "id": peer_id}
-            # Update UI safely
-            self.after(0, self.update_peer_list, ip, name, avatar_mini)
+        # Key by peer_id instead of IP to avoid duplicates when connected to both Wi-Fi and LAN
+        if peer_id not in self.discovered_peers:
+            self.discovered_peers[peer_id] = {"name": name, "avatar": avatar_mini, "ip": ip}
+            self.after(0, self.update_peer_list, peer_id)
         else:
-            # Avatar may have changed
-            if self.discovered_peers[ip].get("avatar") != avatar_mini or self.discovered_peers[ip].get("name") != name:
-                self.discovered_peers[ip]["avatar"] = avatar_mini
-                self.discovered_peers[ip]["name"] = name
-                self.after(0, self.update_peer_list, ip, name, avatar_mini)
+            # Update info
+            peer = self.discovered_peers[peer_id]
+            needs_update = False
 
-    def update_peer_list(self, ip, name, avatar_mini=""):
+            # Prioritize LAN IP (192.168.137.x) if a new packet comes in with it
+            if ip.startswith("192.168.137.") and not peer["ip"].startswith("192.168.137."):
+                peer["ip"] = ip
+                needs_update = True
+
+            if peer.get("avatar") != avatar_mini or peer.get("name") != name:
+                peer["avatar"] = avatar_mini
+                peer["name"] = name
+                needs_update = True
+
+            if needs_update:
+                self.after(0, self.update_peer_list, peer_id)
+
+    def update_peer_list(self, peer_id):
+        if peer_id not in self.discovered_peers:
+            return
+
+        peer = self.discovered_peers[peer_id]
+        ip = peer["ip"]
+        name = peer["name"]
+        avatar_mini = peer["avatar"]
+
         # Check if row already exists, if so destroy it
         for widget in self.peer_list_frame.winfo_children():
-            if hasattr(widget, '_peer_ip') and widget._peer_ip == ip:
+            if hasattr(widget, '_peer_id') and widget._peer_id == peer_id:
                 widget.destroy()
 
         row = ctk.CTkFrame(self.peer_list_frame, fg_color="transparent")
-        row._peer_ip = ip
+        row._peer_id = peer_id
         row.pack(fill="x", pady=5)
 
         if avatar_mini:
@@ -971,6 +1094,7 @@ class SyncThingsApp(ctk.CTk):
             # Single file bypasses zip
             import os
             import tempfile
+            import shutil
 
             file_size = os.path.getsize(data)
             filename = getattr(self, '_last_single_filename', 'received_file')
@@ -983,8 +1107,13 @@ class SyncThingsApp(ctk.CTk):
             try:
                 # Clean up old file if it exists
                 if os.path.exists(final_path):
-                    os.remove(final_path)
-                os.rename(data, final_path)
+                    try:
+                        os.remove(final_path)
+                    except:
+                        pass
+
+                # Use shutil.move instead of os.rename to allow cross-device moves
+                shutil.move(data, final_path)
 
                 # Put exactly this file on the clipboard
                 self.clipboard_manager.set_clipboard_files([final_path])
