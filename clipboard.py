@@ -103,14 +103,18 @@ class ClipboardManager:
         self.ignore_next = True
         try:
             import logging
+            import os
+            # Windows Explorer will silently ignore CF_HDROP if paths are not strictly normalized absolute paths
+            normalized_paths = [os.path.normpath(os.path.abspath(p)) for p in paths]
+
             stc_dropfiles = struct.pack("5I", struct.calcsize("5I"), 0, 0, 0, 1)
-            data = stc_dropfiles + ("\0".join(paths) + "\0\0").encode('utf-16le')
+            data = stc_dropfiles + ("\0".join(normalized_paths) + "\0\0").encode('utf-16le')
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()
             win32clipboard.SetClipboardData(win32con.CF_HDROP, data)
             win32clipboard.CloseClipboard()
             self.last_seq_num = win32clipboard.GetClipboardSequenceNumber()
-            logging.info(f"Files placed in clipboard: {paths}")
+            logging.info(f"Files placed in clipboard: {normalized_paths}")
         except Exception as e:
             import logging
             logging.error(f"Failed to set clipboard files: {e}")
