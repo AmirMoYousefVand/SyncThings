@@ -328,17 +328,17 @@ class SyncThingsApp(ctk.CTk):
         self.progress_stats_frame.pack(fill="x", padx=20, pady=(0, 5))
         self.progress_stats_frame.pack_forget()
 
-        self.lbl_progress_pct = ctk.CTkLabel(self.progress_stats_frame, text="0%", font=("JetBrains Mono", 12))
+        self.lbl_progress_pct = ctk.CTkLabel(self.progress_stats_frame, text="0% - Transferring...", font=("JetBrains Mono", 12))
         self.lbl_progress_pct.pack(side="left")
 
         # Controls for Pause/Cancel
         self.transfer_controls_frame = ctk.CTkFrame(self.progress_stats_frame, fg_color="transparent")
         self.transfer_controls_frame.pack(side="left", padx=15)
 
-        self.btn_pause_resume = ctk.CTkButton(self.transfer_controls_frame, text="", width=30, height=24, image=self.icon_pause if getattr(self, '_icons_loaded', False) else None, fg_color=config.COLORS.get("WARNING", "#F59E0B"), command=self.toggle_pause_transfer)
+        self.btn_pause_resume = ctk.CTkButton(self.transfer_controls_frame, text="", width=24, height=24, border_width=0, image=self.icon_pause if getattr(self, '_icons_loaded', False) else None, fg_color="transparent", hover_color="gray25", command=self.toggle_pause_transfer)
         self.btn_pause_resume.pack(side="left", padx=2)
 
-        self.btn_cancel = ctk.CTkButton(self.transfer_controls_frame, text="", width=30, height=24, image=self.icon_cancel if getattr(self, '_icons_loaded', False) else None, fg_color=config.COLORS.get("ERROR", "#EF4444"), command=self.cancel_transfer)
+        self.btn_cancel = ctk.CTkButton(self.transfer_controls_frame, text="", width=24, height=24, border_width=0, image=self.icon_cancel if getattr(self, '_icons_loaded', False) else None, fg_color="transparent", hover_color="gray25", command=self.cancel_transfer)
         self.btn_cancel.pack(side="left", padx=2)
 
         self.lbl_progress_time = ctk.CTkLabel(self.progress_stats_frame, text="Elapsed: 00:00 | Remaining: --:--", font=("JetBrains Mono", 12), text_color="gray")
@@ -428,18 +428,22 @@ class SyncThingsApp(ctk.CTk):
         return frame
 
     def create_settings_frame(self):
-        frame = ctk.CTkFrame(self.main_container)
+        frame = ctk.CTkScrollableFrame(self.main_container)
 
         self.lbl_set_title = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("profile_settings", default="Profile Settings")), font=self.get_main_font(28, "bold"))
         self.lbl_set_title.pack(pady=20)
 
+        # Inner frame to hold all settings content and ensure correct sizing in ScrollableFrame
+        content_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True)
+
         # Display current avatar
-        self.avatar_display_lbl = ctk.CTkLabel(frame, text="")
+        self.avatar_display_lbl = ctk.CTkLabel(content_frame, text="")
         self.avatar_display_lbl.pack(pady=(10, 10))
         self.refresh_avatar_display()
 
         # Avatar buttons
-        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
         btn_frame.pack(pady=(0, 20))
 
         self.btn_rand_avatar = ctk.CTkButton(btn_frame, text=utils.format_persian(self.tr("random_avatar", default="Generate Random Avatar")), font=self.get_main_font(15, "bold"),
@@ -452,12 +456,12 @@ class SyncThingsApp(ctk.CTk):
                                                command=self.upload_avatar_ui)
         self.btn_upload_avatar.pack(side="left", padx=10)
 
-        self.name_entry = ctk.CTkEntry(frame, placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
+        self.name_entry = ctk.CTkEntry(content_frame, placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
         self.name_entry.insert(0, self.profile_name)
         self.name_entry.pack(pady=20, padx=40, fill="x")
 
         # File Restrictions Frame
-        restrictions_frame = ctk.CTkFrame(frame, fg_color=config.COLORS["CARD"], corner_radius=15)
+        restrictions_frame = ctk.CTkFrame(content_frame, fg_color=config.COLORS["CARD"], corner_radius=15)
         restrictions_frame.pack(pady=10, padx=40, fill="x")
 
         self.lbl_restrictions_title = ctk.CTkLabel(restrictions_frame, text=utils.format_persian(self.tr("file_restrictions", default="File Restrictions")), font=self.get_main_font(16, "bold"))
@@ -488,14 +492,14 @@ class SyncThingsApp(ctk.CTk):
         self.switch_ext.grid(row=0, column=0, sticky="w", pady=5)
         if getattr(self, "enable_ext_limit", False):
             self.switch_ext.select()
-        
+
         mode_options = [
             "Include (فقط اینها)" if self.lang == 'fa' else "Include",
             "Exclude (به‌جز اینها)" if self.lang == 'fa' else "Exclude"
         ]
         self.ext_mode_combo = ctk.CTkComboBox(ext_frame, values=mode_options, width=160, command=lambda _: self.save_settings())
         self.ext_mode_combo.grid(row=0, column=1, sticky="w", padx=10, pady=5)
-        
+
         current_mode = getattr(self, 'ext_mode', 'exclude')
         if current_mode == 'include':
             self.ext_mode_combo.set(mode_options[0])
@@ -509,22 +513,22 @@ class SyncThingsApp(ctk.CTk):
 
         self.toggle_restrictions()
 
-        self.btn_save_settings = ctk.CTkButton(frame, text="Save Changes", font=self.get_main_font(15, "bold"), command=self.save_settings)
+        self.btn_save_settings = ctk.CTkButton(content_frame, text="Save Changes", font=self.get_main_font(15, "bold"), command=self.save_settings)
         self.btn_save_settings.pack(pady=20)
 
-        self.btn_fix_firewall = ctk.CTkButton(frame, text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")),
+        self.btn_fix_firewall = ctk.CTkButton(content_frame, text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")),
                                               font=self.get_main_font(15, "bold"), fg_color=config.COLORS["WARNING"], hover_color="#D97706",
                                               image=self.icon_firewall if getattr(self, '_icons_loaded', False) else None, compound="left",
                                               command=self.fix_firewall_ui)
         self.btn_fix_firewall.pack(pady=(30, 10))
 
-        self.btn_setup_lan = ctk.CTkButton(frame, text=utils.format_persian(self.tr("setup_lan_ip", default="Setup Direct LAN IP")),
+        self.btn_setup_lan = ctk.CTkButton(content_frame, text=utils.format_persian(self.tr("setup_lan_ip", default="Setup Direct LAN IP")),
                                            font=self.get_main_font(15, "bold"), fg_color=config.COLORS["ACCENT"], hover_color="#0284C7",
                                            image=self.icon_lan if getattr(self, '_icons_loaded', False) else None, compound="left",
                                            command=self.setup_lan_ui)
         self.btn_setup_lan.pack(pady=(10, 10))
 
-        self.btn_clear_cache = ctk.CTkButton(frame, text=utils.format_persian(self.tr("clear_cache", default="Clear Cache")),
+        self.btn_clear_cache = ctk.CTkButton(content_frame, text=utils.format_persian(self.tr("clear_cache", default="Clear Cache")),
                                              font=self.get_main_font(15, "bold"), fg_color=config.COLORS["MUTED"], hover_color=config.COLORS["CARD"][1],
                                              image=self.icon_trash if getattr(self, '_icons_loaded', False) else None, compound="left",
                                              command=self.clear_cache_ui)
@@ -1042,94 +1046,58 @@ class SyncThingsApp(ctk.CTk):
             target_exts = [ext.strip().lower() for ext in (getattr(self, 'target_extensions', '') or "").split(',') if ext.strip()]
             target_exts = [ext.lstrip('.') for ext in target_exts]
 
-            for path in data:
-                if os.path.isfile(path):
-                        if check_size and os.path.getsize(path) > max_size_bytes:
-                            self.after(0, lambda p=path: RTLMessageDialog(
-                                self,
-                                self.tr("error", default="Error"),
-                                self.tr("file_size_exceeded", default=f"File '{{}}' exceeds maximum allowed size of {{}} MB.").format(os.path.basename(p), getattr(self, "max_file_size_mb", 100)),
-                                on_yes=lambda: None,
-                                on_no=lambda: None
-                            ))
-                            self.log(f"Transfer blocked: {os.path.basename(path)} exceeds size limit.")
-                            return
-                        ext = Path(path).suffix.lower().strip('.')
-                        if check_ext and target_exts:
-                            if ext_mode == "include" and ext not in target_exts:
-                                self.after(0, lambda p=path: RTLMessageDialog(
-                                    self,
-                                    self.tr("error", default="Error"),
-                                    self.tr("file_type_blocked", default=f"File type of '{{}}' is not allowed.").format(os.path.basename(p)),
-                                    on_yes=lambda: None,
-                                    on_no=lambda: None
-                                ))
-                                self.log(f"Transfer blocked: {os.path.basename(path)} extension not allowed.")
-                                return
-                            if ext_mode == "exclude" and ext in target_exts:
-                                self.after(0, lambda p=path: RTLMessageDialog(
-                                    self,
-                                    self.tr("error", default="Error"),
-                                    self.tr("file_type_blocked", default=f"File type of '{{}}' is not allowed.").format(os.path.basename(p)),
-                                    on_yes=lambda: None,
-                                    on_no=lambda: None
-                                ))
-                                self.log(f"Transfer blocked: {os.path.basename(path)} extension is blocked.")
-                                return
-                elif os.path.isdir(path):
-                        for root, _, files in os.walk(path):
-                            for file in files:
-                                file_path = os.path.join(root, file)
-                                if check_size and os.path.getsize(file_path) > max_size_bytes:
-                                    self.after(0, lambda p=file_path: RTLMessageDialog(
-                                        self,
-                                        self.tr("error", default="Error"),
-                                        self.tr("file_size_exceeded", default=f"File '{{}}' exceeds maximum allowed size of {{}} MB.").format(os.path.basename(p), getattr(self, "max_file_size_mb", 100)),
-                                        on_yes=lambda: None,
-                                        on_no=lambda: None
-                                    ))
-                                    self.log(f"Transfer blocked: {os.path.basename(file_path)} exceeds size limit.")
-                                    return
-                                ext = Path(file_path).suffix.lower().strip('.')
-                                if check_ext and target_exts:
-                                    if ext_mode == "include" and ext not in target_exts:
-                                        self.after(0, lambda p=file_path: RTLMessageDialog(
-                                            self,
-                                            self.tr("error", default="Error"),
-                                            self.tr("file_type_blocked", default=f"File type of '{{}}' is not allowed.").format(os.path.basename(p)),
-                                            on_yes=lambda: None,
-                                            on_no=lambda: None
-                                        ))
-                                        self.log(f"Transfer blocked: {os.path.basename(file_path)} extension not allowed.")
-                                        return
-                                    if ext_mode == "exclude" and ext in target_exts:
-                                        self.after(0, lambda p=file_path: RTLMessageDialog(
-                                            self,
-                                            self.tr("error", default="Error"),
-                                            self.tr("file_type_blocked", default=f"File type of '{{}}' is not allowed.").format(os.path.basename(p)),
-                                            on_yes=lambda: None,
-                                            on_no=lambda: None
-                                        ))
-                                        self.log(f"Transfer blocked: {os.path.basename(file_path)} extension is blocked.")
-                                        return
+            def is_file_allowed(filepath):
+                if check_size and os.path.getsize(filepath) > max_size_bytes:
+                    self.log(f"Skipped {os.path.basename(filepath)}: exceeds size limit.")
+                    return False
+                ext = Path(filepath).suffix.lower().strip('.')
+                if check_ext and target_exts:
+                    if ext_mode == "include" and ext not in target_exts:
+                        self.log(f"Skipped {os.path.basename(filepath)}: extension not allowed.")
+                        return False
+                    if ext_mode == "exclude" and ext in target_exts:
+                        self.log(f"Skipped {os.path.basename(filepath)}: extension is blocked.")
+                        return False
+                return True
 
             # Pre-calculate total size
             total_bytes = 0
             files_to_zip = []
+            skipped_files = 0
 
             for path in data:
                 if os.path.isfile(path):
-                    size = os.path.getsize(path)
-                    total_bytes += size
-                    files_to_zip.append((path, os.path.basename(path), size))
+                    if is_file_allowed(path):
+                        size = os.path.getsize(path)
+                        total_bytes += size
+                        files_to_zip.append((path, os.path.basename(path), size))
+                    else:
+                        skipped_files += 1
                 elif os.path.isdir(path):
                     for root, _, files in os.walk(path):
                         for file in files:
                             file_path = os.path.join(root, file)
-                            size = os.path.getsize(file_path)
-                            total_bytes += size
-                            arcname = os.path.relpath(file_path, os.path.dirname(path))
-                            files_to_zip.append((file_path, arcname, size))
+                            if is_file_allowed(file_path):
+                                size = os.path.getsize(file_path)
+                                total_bytes += size
+                                arcname = os.path.relpath(file_path, os.path.dirname(path))
+                                files_to_zip.append((file_path, arcname, size))
+                            else:
+                                skipped_files += 1
+
+            if len(files_to_zip) == 0:
+                self.log("Transfer aborted: No valid files to send.")
+                self.after(0, lambda: RTLMessageDialog(
+                    self,
+                    self.tr("error", default="Error"),
+                    self.tr("no_valid_files", default="No valid files to send. They may have been blocked by your size or extension limits."),
+                    on_yes=lambda: None,
+                    on_no=lambda: None
+                ))
+                return
+
+            if skipped_files > 0:
+                self.log(f"{skipped_files} files were skipped due to restrictions.")
 
             # Direct transfer optimization for a single file
             if len(files_to_zip) == 1 and os.path.isfile(files_to_zip[0][0]):
@@ -1233,6 +1201,12 @@ class SyncThingsApp(ctk.CTk):
             self._ui_polling_active = True
             import time
             self._transfer_start_time = time.time()
+
+            # Reset icon states on new transfer
+            if not hasattr(self, '_transfer_paused'):
+                self._transfer_paused = False
+            self.btn_pause_resume.configure(image=self.icon_pause if getattr(self, '_icons_loaded', False) else None)
+
             # Start the polling loop safely on the main thread
             self.after(0, self._poll_ui_progress)
 
@@ -1253,8 +1227,9 @@ class SyncThingsApp(ctk.CTk):
             self.progress_stats_frame.pack(fill="x", padx=20, pady=(0, 5))
             self.progress_bar.pack(fill="x", padx=20, pady=(0, 20))
             self.progress_bar.set(0)
-            self._transfer_paused = False
-            self.btn_pause_resume.configure(image=self.icon_pause if getattr(self, '_icons_loaded', False) else None)
+
+            # Ensure proper icon is shown when a transfer starts
+            self.btn_pause_resume.configure(image=self.icon_play if getattr(self, '_transfer_paused', False) else self.icon_pause if getattr(self, '_icons_loaded', False) else None)
 
         self.progress_bar.set(pct)
         self.lbl_progress_pct.configure(text=f"{int(pct * 100)}% - {action}...")
