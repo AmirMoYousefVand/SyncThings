@@ -457,10 +457,10 @@ class SyncThingsApp(ctk.CTk):
         restrictions_frame = ctk.CTkFrame(frame, fg_color=config.COLORS["CARD"], corner_radius=15)
         restrictions_frame.pack(pady=10, padx=40, fill="x")
 
-        restrictions_title = ctk.CTkLabel(restrictions_frame, text="File Restrictions", font=self.get_main_font(16, "bold"))
-        restrictions_title.pack(anchor="w", padx=15, pady=(15, 5))
+        self.lbl_restrictions_title = ctk.CTkLabel(restrictions_frame, text=utils.format_persian(self.tr("file_restrictions", default="File Restrictions")), font=self.get_main_font(16, "bold"))
+        self.lbl_restrictions_title.pack(anchor="w", padx=15, pady=(15, 5))
 
-        self.switch_restrictions = ctk.CTkSwitch(restrictions_frame, text="Enable File Restrictions", command=self.toggle_restrictions)
+        self.switch_restrictions = ctk.CTkSwitch(restrictions_frame, text=utils.format_persian(self.tr("enable_file_restrictions", default="Enable File Restrictions")), font=self.get_main_font(14), command=self.toggle_restrictions)
         self.switch_restrictions.pack(anchor="w", padx=15, pady=5)
         if hasattr(self, 'enable_restrictions') and self.enable_restrictions:
             self.switch_restrictions.select()
@@ -469,19 +469,23 @@ class SyncThingsApp(ctk.CTk):
         self.entries_frame = ctk.CTkFrame(restrictions_frame, fg_color="transparent")
         self.entries_frame.pack(fill="x", padx=15, pady=(5, 15))
 
-        lbl_size = ctk.CTkLabel(self.entries_frame, text="Max File Size (MB):")
-        lbl_size.grid(row=0, column=0, sticky="w", pady=5)
+        self.lbl_size = ctk.CTkLabel(self.entries_frame, text=utils.format_persian(self.tr("max_file_size_mb", default="Max File Size (MB):")), font=self.get_main_font(14))
+        self.lbl_size.grid(row=0, column=0, sticky="w", pady=5)
         self.size_entry = ctk.CTkEntry(self.entries_frame, width=100)
         self.size_entry.grid(row=0, column=1, sticky="w", padx=10, pady=5)
         if hasattr(self, 'max_file_size_mb'):
             self.size_entry.insert(0, str(self.max_file_size_mb))
+        # Add tracking for real-time save
+        self.size_entry.bind("<KeyRelease>", lambda event: self.save_settings())
 
-        lbl_ext = ctk.CTkLabel(self.entries_frame, text="Allowed Extensions (comma-separated):")
-        lbl_ext.grid(row=1, column=0, sticky="w", pady=5)
+        self.lbl_ext = ctk.CTkLabel(self.entries_frame, text=utils.format_persian(self.tr("allowed_extensions", default="Allowed Extensions (comma-separated):")), font=self.get_main_font(14))
+        self.lbl_ext.grid(row=1, column=0, sticky="w", pady=5)
         self.ext_entry = ctk.CTkEntry(self.entries_frame, width=250)
         self.ext_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
         if hasattr(self, 'allowed_extensions'):
             self.ext_entry.insert(0, self.allowed_extensions)
+        # Add tracking for real-time save
+        self.ext_entry.bind("<KeyRelease>", lambda event: self.save_settings())
 
         self.toggle_restrictions()
 
@@ -507,6 +511,15 @@ class SyncThingsApp(ctk.CTk):
         self.btn_clear_cache.pack(pady=(10, 30))
 
         return frame
+
+    def toggle_restrictions(self):
+        if self.switch_restrictions.get() == 1:
+            self.size_entry.configure(state="normal")
+            self.ext_entry.configure(state="normal")
+        else:
+            self.size_entry.configure(state="disabled")
+            self.ext_entry.configure(state="disabled")
+        self.save_settings()
 
     def clear_cache_ui(self):
         import utils
@@ -676,6 +689,14 @@ class SyncThingsApp(ctk.CTk):
              self.btn_clear_cache.configure(text=utils.format_persian(self.tr("clear_cache", default="Clear Cache")), font=self.get_main_font(15, "bold"))
         if hasattr(self, 'name_entry'):
              self.name_entry.configure(placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
+        if hasattr(self, 'lbl_restrictions_title'):
+             self.lbl_restrictions_title.configure(text=utils.format_persian(self.tr("file_restrictions", default="File Restrictions")), font=self.get_main_font(16, "bold"))
+        if hasattr(self, 'switch_restrictions'):
+             self.switch_restrictions.configure(text=utils.format_persian(self.tr("enable_file_restrictions", default="Enable File Restrictions")), font=self.get_main_font(14))
+        if hasattr(self, 'lbl_size'):
+             self.lbl_size.configure(text=utils.format_persian(self.tr("max_file_size_mb", default="Max File Size (MB):")), font=self.get_main_font(14))
+        if hasattr(self, 'lbl_ext'):
+             self.lbl_ext.configure(text=utils.format_persian(self.tr("allowed_extensions", default="Allowed Extensions (comma-separated):")), font=self.get_main_font(14))
 
         if self.network_manager.connected:
             self.lbl_status.configure(text=utils.format_persian(self.tr("connected")), font=self.get_main_font(18, "bold"))
@@ -976,6 +997,61 @@ class SyncThingsApp(ctk.CTk):
             import config
             import utils
             import os
+            from pathlib import Path
+
+            # Apply restrictions if enabled
+            if hasattr(self, 'enable_restrictions') and self.enable_restrictions:
+                allowed_exts = [ext.strip().lower() for ext in (self.allowed_extensions or "").split(',') if ext.strip()]
+                # Strip leading dots if any
+                allowed_exts = [ext.lstrip('.') for ext in allowed_exts]
+                max_size_bytes = (self.max_file_size_mb or 100) * 1024 * 1024
+
+                for path in data:
+                    if os.path.isfile(path):
+                        if os.path.getsize(path) > max_size_bytes:
+                            self.after(0, lambda p=path: RTLMessageDialog(
+                                self,
+                                self.tr("error", default="Error"),
+                                self.tr("file_size_exceeded", default=f"File '{{}}' exceeds maximum allowed size of {{}} MB.").format(os.path.basename(p), self.max_file_size_mb),
+                                on_yes=lambda: None,
+                                on_no=lambda: None
+                            ))
+                            self.log(f"Transfer blocked: {os.path.basename(path)} exceeds size limit.")
+                            return
+                        if allowed_exts and Path(path).suffix.lower().strip('.') not in allowed_exts:
+                            self.after(0, lambda p=path: RTLMessageDialog(
+                                self,
+                                self.tr("error", default="Error"),
+                                self.tr("file_type_blocked", default=f"File type of '{{}}' is not allowed.").format(os.path.basename(p)),
+                                on_yes=lambda: None,
+                                on_no=lambda: None
+                            ))
+                            self.log(f"Transfer blocked: {os.path.basename(path)} extension not allowed.")
+                            return
+                    elif os.path.isdir(path):
+                        for root, _, files in os.walk(path):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                if os.path.getsize(file_path) > max_size_bytes:
+                                    self.after(0, lambda p=file_path: RTLMessageDialog(
+                                        self,
+                                        self.tr("error", default="Error"),
+                                        self.tr("file_size_exceeded", default=f"File '{{}}' exceeds maximum allowed size of {{}} MB.").format(os.path.basename(p), self.max_file_size_mb),
+                                        on_yes=lambda: None,
+                                        on_no=lambda: None
+                                    ))
+                                    self.log(f"Transfer blocked: {os.path.basename(file_path)} exceeds size limit.")
+                                    return
+                                if allowed_exts and Path(file_path).suffix.lower().strip('.') not in allowed_exts:
+                                    self.after(0, lambda p=file_path: RTLMessageDialog(
+                                        self,
+                                        self.tr("error", default="Error"),
+                                        self.tr("file_type_blocked", default=f"File type of '{{}}' is not allowed.").format(os.path.basename(p)),
+                                        on_yes=lambda: None,
+                                        on_no=lambda: None
+                                    ))
+                                    self.log(f"Transfer blocked: {os.path.basename(file_path)} extension not allowed.")
+                                    return
 
             # Pre-calculate total size
             total_bytes = 0

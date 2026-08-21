@@ -421,6 +421,12 @@ class NetworkManager:
                         if success:
                             if 'on_data_received' in self.callbacks:
                                 self.callbacks['on_data_received'](data_type, temp_file)
+                        else:
+                            try:
+                                if os.path.exists(temp_file):
+                                    os.remove(temp_file)
+                            except:
+                                pass
                     else:
                         self.reset_transfer_events()
                         data = self.recvall(conn, size, progress_callback=progress_cb)
