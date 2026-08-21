@@ -463,31 +463,48 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_restrictions_title = ctk.CTkLabel(restrictions_frame, text=utils.format_persian(self.tr("file_restrictions", default="File Restrictions")), font=self.get_main_font(16, "bold"))
         self.lbl_restrictions_title.pack(anchor="w", padx=15, pady=(15, 5))
 
-        self.switch_size = ctk.CTkSwitch(restrictions_frame, text=utils.format_persian(self.tr("enable_file_restrictions", default="Enable File Restrictions")), font=self.get_main_font(14), command=self.toggle_restrictions)
-        self.switch_size.pack(anchor="w", padx=15, pady=5)
-        if hasattr(self, 'enable_restrictions') and self.enable_size_limit:
+        # Size Limit Frame
+        size_frame = ctk.CTkFrame(restrictions_frame, fg_color="transparent")
+        size_frame.pack(fill="x", padx=15, pady=5)
+
+        self.switch_size = ctk.CTkSwitch(size_frame, text=utils.format_persian(self.tr("enable_size_limit", default="Enable Size Limit")), font=self.get_main_font(14), command=self.toggle_restrictions)
+        self.switch_size.grid(row=0, column=0, sticky="w", pady=5)
+        if getattr(self, "enable_size_limit", False):
             self.switch_size.select()
 
-        # Entries frame
-        self.entries_frame = ctk.CTkFrame(restrictions_frame, fg_color="transparent")
-        self.entries_frame.pack(fill="x", padx=15, pady=(5, 15))
+        self.lbl_size = ctk.CTkLabel(size_frame, text=utils.format_persian(self.tr("max_file_size_mb", default="Max File Size (MB):")), font=self.get_main_font(14))
+        self.lbl_size.grid(row=0, column=1, sticky="w", padx=10, pady=5)
 
-        self.lbl_size = ctk.CTkLabel(self.entries_frame, text=utils.format_persian(self.tr("max_file_size_mb", default="Max File Size (MB):")), font=self.get_main_font(14))
-        self.lbl_size.grid(row=0, column=0, sticky="w", pady=5)
-        self.size_entry = ctk.CTkEntry(self.entries_frame, width=100)
-        self.size_entry.grid(row=0, column=1, sticky="w", padx=10, pady=5)
-        if hasattr(self, 'max_file_size_mb'):
-            self.size_entry.insert(0, str(getattr(self, "max_file_size_mb", 100)))
-        # Add tracking for real-time save
+        self.size_entry = ctk.CTkEntry(size_frame, width=100)
+        self.size_entry.grid(row=0, column=2, sticky="w", padx=10, pady=5)
+        self.size_entry.insert(0, str(getattr(self, "max_file_size_mb", 100)))
         self.size_entry.bind("<KeyRelease>", lambda event: self.save_settings())
 
-        self.lbl_ext = ctk.CTkLabel(self.entries_frame, text=utils.format_persian(self.tr("allowed_extensions", default="Allowed Extensions (comma-separated):")), font=self.get_main_font(14))
-        self.lbl_ext.grid(row=1, column=0, sticky="w", pady=5)
-        self.ext_entry = ctk.CTkEntry(self.entries_frame, width=250)
-        self.ext_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
-        if hasattr(self, 'allowed_extensions'):
-            self.ext_entry.insert(0, self.target_extensions)
-        # Add tracking for real-time save
+        # Extension Limit Frame
+        ext_frame = ctk.CTkFrame(restrictions_frame, fg_color="transparent")
+        ext_frame.pack(fill="x", padx=15, pady=(5, 15))
+
+        self.switch_ext = ctk.CTkSwitch(ext_frame, text=utils.format_persian(self.tr("enable_ext_limit", default="Enable Extension Limit")), font=self.get_main_font(14), command=self.toggle_restrictions)
+        self.switch_ext.grid(row=0, column=0, sticky="w", pady=5)
+        if getattr(self, "enable_ext_limit", False):
+            self.switch_ext.select()
+        
+        mode_options = [
+            "Include (فقط اینها)" if self.lang == 'fa' else "Include",
+            "Exclude (به‌جز اینها)" if self.lang == 'fa' else "Exclude"
+        ]
+        self.ext_mode_combo = ctk.CTkComboBox(ext_frame, values=mode_options, width=160, command=lambda _: self.save_settings())
+        self.ext_mode_combo.grid(row=0, column=1, sticky="w", padx=10, pady=5)
+        
+        current_mode = getattr(self, 'ext_mode', 'exclude')
+        if current_mode == 'include':
+            self.ext_mode_combo.set(mode_options[0])
+        else:
+            self.ext_mode_combo.set(mode_options[1])
+
+        self.ext_entry = ctk.CTkEntry(ext_frame, width=250, placeholder_text="e.g. mp4, mkv, exe")
+        self.ext_entry.grid(row=0, column=2, sticky="w", padx=10, pady=5)
+        self.ext_entry.insert(0, getattr(self, "target_extensions", ""))
         self.ext_entry.bind("<KeyRelease>", lambda event: self.save_settings())
 
         self.toggle_restrictions()
@@ -1026,7 +1043,7 @@ class SyncThingsApp(ctk.CTk):
             target_exts = [ext.lstrip('.') for ext in target_exts]
 
             for path in data:
-                    if os.path.isfile(path):
+                if os.path.isfile(path):
                         if check_size and os.path.getsize(path) > max_size_bytes:
                             self.after(0, lambda p=path: RTLMessageDialog(
                                 self,
@@ -1059,7 +1076,7 @@ class SyncThingsApp(ctk.CTk):
                                 ))
                                 self.log(f"Transfer blocked: {os.path.basename(path)} extension is blocked.")
                                 return
-                    elif os.path.isdir(path):
+                elif os.path.isdir(path):
                         for root, _, files in os.walk(path):
                             for file in files:
                                 file_path = os.path.join(root, file)
