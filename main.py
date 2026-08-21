@@ -463,10 +463,10 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_restrictions_title = ctk.CTkLabel(restrictions_frame, text=utils.format_persian(self.tr("file_restrictions", default="File Restrictions")), font=self.get_main_font(16, "bold"))
         self.lbl_restrictions_title.pack(anchor="w", padx=15, pady=(15, 5))
 
-        self.switch_restrictions = ctk.CTkSwitch(restrictions_frame, text=utils.format_persian(self.tr("enable_file_restrictions", default="Enable File Restrictions")), font=self.get_main_font(14), command=self.toggle_restrictions)
-        self.switch_restrictions.pack(anchor="w", padx=15, pady=5)
-        if hasattr(self, 'enable_restrictions') and self.enable_restrictions:
-            self.switch_restrictions.select()
+        self.switch_size = ctk.CTkSwitch(restrictions_frame, text=utils.format_persian(self.tr("enable_file_restrictions", default="Enable File Restrictions")), font=self.get_main_font(14), command=self.toggle_restrictions)
+        self.switch_size.pack(anchor="w", padx=15, pady=5)
+        if hasattr(self, 'enable_restrictions') and self.enable_size_limit:
+            self.switch_size.select()
 
         # Entries frame
         self.entries_frame = ctk.CTkFrame(restrictions_frame, fg_color="transparent")
@@ -486,7 +486,7 @@ class SyncThingsApp(ctk.CTk):
         self.ext_entry = ctk.CTkEntry(self.entries_frame, width=250)
         self.ext_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
         if hasattr(self, 'allowed_extensions'):
-            self.ext_entry.insert(0, self.allowed_extensions)
+            self.ext_entry.insert(0, self.target_extensions)
         # Add tracking for real-time save
         self.ext_entry.bind("<KeyRelease>", lambda event: self.save_settings())
 
@@ -516,12 +516,18 @@ class SyncThingsApp(ctk.CTk):
         return frame
 
     def toggle_restrictions(self):
-        if self.switch_restrictions.get() == 1:
-            self.size_entry.configure(state="normal")
-            self.ext_entry.configure(state="normal")
-        else:
-            self.size_entry.configure(state="disabled")
-            self.ext_entry.configure(state="disabled")
+        if hasattr(self, "switch_size"):
+            if self.switch_size.get() == 1:
+                self.size_entry.configure(state="normal")
+            else:
+                self.size_entry.configure(state="disabled")
+        if hasattr(self, "switch_ext"):
+            if self.switch_ext.get() == 1:
+                self.ext_mode_combo.configure(state="normal")
+                self.ext_entry.configure(state="normal")
+            else:
+                self.ext_mode_combo.configure(state="disabled")
+                self.ext_entry.configure(state="disabled")
         self.save_settings()
 
     def clear_cache_ui(self):
@@ -694,8 +700,10 @@ class SyncThingsApp(ctk.CTk):
              self.name_entry.configure(placeholder_text=utils.format_persian(self.tr("display_name", default="Display Name")))
         if hasattr(self, 'lbl_restrictions_title'):
              self.lbl_restrictions_title.configure(text=utils.format_persian(self.tr("file_restrictions", default="File Restrictions")), font=self.get_main_font(16, "bold"))
-        if hasattr(self, 'switch_restrictions'):
-             self.switch_restrictions.configure(text=utils.format_persian(self.tr("enable_file_restrictions", default="Enable File Restrictions")), font=self.get_main_font(14))
+        if hasattr(self, 'switch_size'):
+             self.switch_size.configure(text=utils.format_persian(self.tr("enable_size_limit", default="Enable Size Limit")), font=self.get_main_font(14))
+        if hasattr(self, 'switch_ext'):
+             self.switch_ext.configure(text=utils.format_persian(self.tr("enable_ext_limit", default="Enable Extension Limit")), font=self.get_main_font(14))
         if hasattr(self, 'lbl_size'):
              self.lbl_size.configure(text=utils.format_persian(self.tr("max_file_size_mb", default="Max File Size (MB):")), font=self.get_main_font(14))
         if hasattr(self, 'lbl_ext'):
@@ -741,14 +749,21 @@ class SyncThingsApp(ctk.CTk):
         new_name = self.name_entry.get().strip()
         if new_name:
             self.profile_name = new_name
-            self.enable_restrictions = self.switch_restrictions.get() == 1
+            if hasattr(self, "switch_size"):
+                self.enable_size_limit = self.switch_size.get() == 1
+            if hasattr(self, "switch_ext"):
+                self.enable_ext_limit = self.switch_ext.get() == 1
+                self.ext_mode = 'include' if getattr(self, "ext_mode_combo", None) and self.ext_mode_combo.get().startswith('Include') else 'exclude'
             try:
-                getattr(self, "max_file_size_mb", 100) = int(self.size_entry.get().strip())
+                if hasattr(self, "size_entry"):
+                    self.max_file_size_mb = int(self.size_entry.get().strip())
             except ValueError:
-                getattr(self, "max_file_size_mb", 100) = 100
-            self.allowed_extensions = self.ext_entry.get().strip()
+                self.max_file_size_mb = 100
+            
+            if hasattr(self, "ext_entry"):
+                self.target_extensions = self.ext_entry.get().strip()
 
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, self.enable_restrictions, getattr(self, "max_file_size_mb", 100), self.allowed_extensions)
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, getattr(self, "enable_size_limit", False), getattr(self, "max_file_size_mb", 100), getattr(self, "enable_ext_limit", False), getattr(self, "ext_mode", "exclude"), getattr(self, "target_extensions", ""))
             self.network_manager.update_profile_name(self.profile_name, self.avatar_b64)
             self.log(config.TRANSLATIONS["en"]["settings_saved"])
 
@@ -1003,13 +1018,14 @@ class SyncThingsApp(ctk.CTk):
             from pathlib import Path
 
             # Apply restrictions if enabled
-            if hasattr(self, 'enable_restrictions') and self.enable_restrictions:
-                allowed_exts = [ext.strip().lower() for ext in (self.allowed_extensions or "").split(',') if ext.strip()]
-                # Strip leading dots if any
-                allowed_exts = [ext.lstrip('.') for ext in allowed_exts]
-                max_size_bytes = (getattr(self, "max_file_size_mb", 100) or 100) * 1024 * 1024
+            check_size = getattr(self, 'enable_size_limit', False)
+            max_size_bytes = (getattr(self, "max_file_size_mb", 100) or 100) * 1024 * 1024
+            check_ext = getattr(self, 'enable_ext_limit', False)
+            ext_mode = getattr(self, 'ext_mode', 'exclude')
+            target_exts = [ext.strip().lower() for ext in (getattr(self, 'target_extensions', '') or "").split(',') if ext.strip()]
+            target_exts = [ext.lstrip('.') for ext in target_exts]
 
-                for path in data:
+            for path in data:
                     if os.path.isfile(path):
                         if check_size and os.path.getsize(path) > max_size_bytes:
                             self.after(0, lambda p=path: RTLMessageDialog(
