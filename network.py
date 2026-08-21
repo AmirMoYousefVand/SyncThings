@@ -502,6 +502,7 @@ class NetworkManager:
         while received < n:
             if self.cancel_event.is_set():
                 logging.error("Transfer cancelled by user")
+                self.disconnect(send_signal=True)
                 return None
             self.pause_event.wait()
 
