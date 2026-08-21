@@ -21,6 +21,10 @@ class NetworkManager:
         self.udp_socket = None
         self.discovery_running = False
 
+        self.pause_event = threading.Event()
+        self.pause_event.set()  # Set means not paused
+        self.cancel_event = threading.Event()
+
     def get_local_ips(self):
         ips = []
         try:
@@ -258,6 +262,7 @@ class NetworkManager:
             except:
                 pass
         self.connected = False
+        self.cancel_transfer()
         if self.peer_socket:
             try:
                 self.peer_socket.close()
@@ -265,9 +270,24 @@ class NetworkManager:
                 pass
         self.peer_socket = None
 
+    def pause_transfer(self):
+        self.pause_event.clear()
+
+    def resume_transfer(self):
+        self.pause_event.set()
+
+    def cancel_transfer(self):
+        self.cancel_event.set()
+        self.resume_transfer() # Unblock if paused
+
+    def reset_transfer_events(self):
+        self.cancel_event.clear()
+        self.pause_event.set()
+
     def send_file_packet(self, data_type, filepath, progress_callback=None):
         if not self.connected or not self.peer_socket:
             return False
+        self.reset_transfer_events()
         import os
         total = os.path.getsize(filepath)
         try:
@@ -288,6 +308,10 @@ class NetworkManager:
                 if hasattr(os, 'sendfile') and os.name != 'nt':
                     # Unix
                     while sent < total:
+                        if self.cancel_event.is_set():
+                            raise Exception("Transfer cancelled by user")
+                        self.pause_event.wait()
+
                         snt = os.sendfile(self.peer_socket.fileno(), f.fileno(), sent, min(total - sent, chunk_size))
                         if snt == 0:
                             break
@@ -305,6 +329,10 @@ class NetworkManager:
                     buffer = bytearray(chunk_size)
                     view = memoryview(buffer)
                     while sent < total:
+                        if self.cancel_event.is_set():
+                            raise Exception("Transfer cancelled by user")
+                        self.pause_event.wait()
+
                         bytes_read = f.readinto(buffer)
                         if not bytes_read:
                             break
@@ -328,6 +356,7 @@ class NetworkManager:
     def send_data_packet(self, data_type, data, progress_callback=None):
         if not self.connected or not self.peer_socket:
             return False
+        self.reset_transfer_events()
         try:
             header = struct.pack('>BQ', data_type, len(data))
             self.peer_socket.sendall(header)
@@ -349,6 +378,10 @@ class NetworkManager:
             last_cb_time = 0
 
             while sent < total:
+                if self.cancel_event.is_set():
+                    raise Exception("Transfer cancelled by user")
+                self.pause_event.wait()
+
                 chunk = data[sent:sent+chunk_size]
                 # CRITICAL: Must use sendall to prevent silent data loss if OS buffer is full
                 self.peer_socket.sendall(chunk)
@@ -389,6 +422,7 @@ class NetworkManager:
                             if 'on_data_received' in self.callbacks:
                                 self.callbacks['on_data_received'](data_type, temp_file)
                     else:
+                        self.reset_transfer_events()
                         data = self.recvall(conn, size, progress_callback=progress_cb)
                         if data:
                             if 'on_data_received' in self.callbacks:
@@ -400,6 +434,7 @@ class NetworkManager:
             self.callbacks['on_error']("Connection lost.")
 
     def recv_to_file(self, sock, n, filepath, progress_callback=None):
+        self.reset_transfer_events()
         import logging
         import time
         chunk_size = 4194304 # 4MB chunk
@@ -413,6 +448,12 @@ class NetworkManager:
 
         with open(filepath, 'wb') as f:
             while received < n:
+                if self.cancel_event.is_set():
+                    logging.error("Transfer cancelled by user")
+                    self.disconnect(send_signal=True)
+                    return False
+                self.pause_event.wait()
+
                 # Accumulate bytes in the 4MB buffer before writing to disk
                 # This prevents thousands of tiny 1.5KB disk writes which kills SSD IOPS
                 bytes_accumulated = 0
@@ -453,6 +494,11 @@ class NetworkManager:
         received = 0
 
         while received < n:
+            if self.cancel_event.is_set():
+                logging.error("Transfer cancelled by user")
+                return None
+            self.pause_event.wait()
+
             to_read = min(n - received, chunk_size)
             packet_len = sock.recv_into(view[received:received+to_read], to_read)
             if packet_len == 0:

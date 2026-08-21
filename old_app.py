@@ -72,18 +72,26 @@ class RTLMessageDialog(ctk.CTkToplevel):
         self.configure(fg_color=SIDEBAR_COLOR)
         self.attributes("-topmost", True)
         self.resizable(False, False)
-        
+
         # Center on screen
         self.update_idletasks()
         x = (self.winfo_screenwidth() // 2) - (420 // 2)
         y = (self.winfo_screenheight() // 2) - (220 // 2)
         self.geometry(f"+{x}+{y}")
-        
+
         self.result = False
-        
-        lbl = ctk.CTkLabel(self, text=format_persian(message), font=ctk.CTkFont(family=FONT_MAIN, size=15), wraplength=380, justify="center")
-        lbl.pack(expand=True, pady=(30, 10), padx=20)
-        
+
+        # Add RLM (‏) for Persian to ensure trailing punctuation is rendered correctly
+        display_text = format_persian(message + "‏")
+        lbl = ctk.CTkLabel(
+            self,
+            text=display_text,
+            font=ctk.CTkFont(family=FONT_MAIN, size=15),
+            wraplength=380,
+            justify="right"
+        )
+        lbl.pack(expand=True, pady=(30, 10), padx=20, fill="both")
+
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", pady=(0, 25), padx=30)
         

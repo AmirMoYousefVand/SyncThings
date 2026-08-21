@@ -63,8 +63,18 @@ class RTLMessageDialog(ctk.CTkToplevel):
         self.configure(fg_color=bg_color)
 
         # Label
-        self.lbl = ctk.CTkLabel(self, text=utils.format_persian(text), font=master.get_main_font(15, "bold") if hasattr(master, 'get_main_font') else (config.FONT_EN, 15, "bold"))
-        self.lbl.pack(pady=20, padx=20)
+        is_fa = getattr(master, 'lang', 'en') == 'fa'
+        # Add RLM (‏) for Persian to ensure trailing punctuation is rendered correctly
+        display_text = "‫" + utils.format_persian(text) + "‬" if is_fa else text
+
+        self.lbl = ctk.CTkLabel(
+            self,
+            text=display_text,
+            font=master.get_main_font(15, "bold") if hasattr(master, 'get_main_font') else (config.FONT_EN, 15, "bold"),
+            wraplength=310,
+            justify="right" if is_fa else "left"
+        )
+        self.lbl.pack(pady=20, padx=20, fill="both", expand=True)
 
         # Buttons frame
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -106,7 +116,7 @@ class SyncThingsApp(ctk.CTk):
         # State
         self.app_id = str(uuid.uuid4())
         self.default_name = f"User_{self.app_id[:6]}"
-        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state = profile.load_profile(self.default_name)
+        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state, self.enable_restrictions, self.max_file_size_mb, self.allowed_extensions = profile.load_profile(self.default_name)
 
         # Set App Icon
         icon_path = utils.resource_path("app.ico")
@@ -318,6 +328,16 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_progress_pct = ctk.CTkLabel(self.progress_stats_frame, text="0%", font=("JetBrains Mono", 12))
         self.lbl_progress_pct.pack(side="left")
 
+        # Controls for Pause/Cancel
+        self.transfer_controls_frame = ctk.CTkFrame(self.progress_stats_frame, fg_color="transparent")
+        self.transfer_controls_frame.pack(side="left", padx=15)
+
+        self.btn_pause_resume = ctk.CTkButton(self.transfer_controls_frame, text="⏸", width=30, height=24, font=("JetBrains Mono", 14), fg_color=config.COLORS.get("WARNING", "#F59E0B"), command=self.toggle_pause_transfer)
+        self.btn_pause_resume.pack(side="left", padx=2)
+
+        self.btn_cancel = ctk.CTkButton(self.transfer_controls_frame, text="❌", width=30, height=24, font=("JetBrains Mono", 14), fg_color=config.COLORS.get("ERROR", "#EF4444"), command=self.cancel_transfer)
+        self.btn_cancel.pack(side="left", padx=2)
+
         self.lbl_progress_time = ctk.CTkLabel(self.progress_stats_frame, text="Elapsed: 00:00 | Remaining: --:--", font=("JetBrains Mono", 12), text_color="gray")
         self.lbl_progress_time.pack(side="right")
 
@@ -433,8 +453,40 @@ class SyncThingsApp(ctk.CTk):
         self.name_entry.insert(0, self.profile_name)
         self.name_entry.pack(pady=20, padx=40, fill="x")
 
+        # File Restrictions Frame
+        restrictions_frame = ctk.CTkFrame(frame, fg_color=config.COLORS["CARD"], corner_radius=15)
+        restrictions_frame.pack(pady=10, padx=40, fill="x")
+
+        restrictions_title = ctk.CTkLabel(restrictions_frame, text="File Restrictions", font=self.get_main_font(16, "bold"))
+        restrictions_title.pack(anchor="w", padx=15, pady=(15, 5))
+
+        self.switch_restrictions = ctk.CTkSwitch(restrictions_frame, text="Enable File Restrictions", command=self.toggle_restrictions)
+        self.switch_restrictions.pack(anchor="w", padx=15, pady=5)
+        if hasattr(self, 'enable_restrictions') and self.enable_restrictions:
+            self.switch_restrictions.select()
+
+        # Entries frame
+        self.entries_frame = ctk.CTkFrame(restrictions_frame, fg_color="transparent")
+        self.entries_frame.pack(fill="x", padx=15, pady=(5, 15))
+
+        lbl_size = ctk.CTkLabel(self.entries_frame, text="Max File Size (MB):")
+        lbl_size.grid(row=0, column=0, sticky="w", pady=5)
+        self.size_entry = ctk.CTkEntry(self.entries_frame, width=100)
+        self.size_entry.grid(row=0, column=1, sticky="w", padx=10, pady=5)
+        if hasattr(self, 'max_file_size_mb'):
+            self.size_entry.insert(0, str(self.max_file_size_mb))
+
+        lbl_ext = ctk.CTkLabel(self.entries_frame, text="Allowed Extensions (comma-separated):")
+        lbl_ext.grid(row=1, column=0, sticky="w", pady=5)
+        self.ext_entry = ctk.CTkEntry(self.entries_frame, width=250)
+        self.ext_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+        if hasattr(self, 'allowed_extensions'):
+            self.ext_entry.insert(0, self.allowed_extensions)
+
+        self.toggle_restrictions()
+
         self.btn_save_settings = ctk.CTkButton(frame, text="Save Changes", font=self.get_main_font(15, "bold"), command=self.save_settings)
-        self.btn_save_settings.pack(pady=10)
+        self.btn_save_settings.pack(pady=20)
 
         self.btn_fix_firewall = ctk.CTkButton(frame, text=utils.format_persian(self.tr("fix_firewall", default="Grant Firewall permission")),
                                               font=self.get_main_font(15, "bold"), fg_color=config.COLORS["WARNING"], hover_color="#D97706",
@@ -567,7 +619,7 @@ class SyncThingsApp(ctk.CTk):
         import profile
         try:
             current_state = "zoomed" if self.state() == "zoomed" else "normal"
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state)
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state, self.enable_restrictions, self.max_file_size_mb, self.allowed_extensions)
         except:
             pass
 
@@ -581,7 +633,7 @@ class SyncThingsApp(ctk.CTk):
         import profile
         try:
             current_state = "zoomed" if self.state() == "zoomed" else "normal"
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state)
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state, self.enable_restrictions, self.max_file_size_mb, self.allowed_extensions)
         except:
             pass
 
@@ -665,7 +717,14 @@ class SyncThingsApp(ctk.CTk):
         new_name = self.name_entry.get().strip()
         if new_name:
             self.profile_name = new_name
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64)
+            self.enable_restrictions = self.switch_restrictions.get() == 1
+            try:
+                self.max_file_size_mb = int(self.size_entry.get().strip())
+            except ValueError:
+                self.max_file_size_mb = 100
+            self.allowed_extensions = self.ext_entry.get().strip()
+
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, self.enable_restrictions, self.max_file_size_mb, self.allowed_extensions)
             self.network_manager.update_profile_name(self.profile_name, self.avatar_b64)
             self.log(config.TRANSLATIONS["en"]["settings_saved"])
 
@@ -1003,6 +1062,30 @@ class SyncThingsApp(ctk.CTk):
             self.log(f"Error processing files: {e}")
             logging.error(f"Exception in _process_and_send_files: {e}", exc_info=True)
 
+    def toggle_pause_transfer(self):
+        if not hasattr(self, '_transfer_paused'):
+            self._transfer_paused = False
+
+        self._transfer_paused = not self._transfer_paused
+        if self._transfer_paused:
+            self.btn_pause_resume.configure(text="▶")
+            self.network_manager.pause_transfer()
+            self.log("Transfer paused.")
+        else:
+            self.btn_pause_resume.configure(text="⏸")
+            self.network_manager.resume_transfer()
+            self.log("Transfer resumed.")
+
+    def cancel_transfer(self):
+        self.network_manager.cancel_transfer()
+        self.log("Transfer cancelled by user.")
+        self._ui_polling_active = False
+        self.progress_bar.pack_forget()
+        self.progress_stats_frame.pack_forget()
+        # Reset button state
+        self._transfer_paused = False
+        self.btn_pause_resume.configure(text="⏸")
+
     def _update_progress(self, current, total, action="Transferring"):
         # This is called from the background network thread.
         # It must NOT call any UI methods or wait for the UI thread.
@@ -1034,6 +1117,8 @@ class SyncThingsApp(ctk.CTk):
             self.progress_stats_frame.pack(fill="x", padx=20, pady=(0, 5))
             self.progress_bar.pack(fill="x", padx=20, pady=(0, 20))
             self.progress_bar.set(0)
+            self._transfer_paused = False
+            self.btn_pause_resume.configure(text="⏸")
 
         self.progress_bar.set(pct)
         self.lbl_progress_pct.configure(text=f"{int(pct * 100)}% - {action}...")
