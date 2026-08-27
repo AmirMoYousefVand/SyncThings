@@ -9,3 +9,6 @@ cairosvg
 arabic_reshaper
 python-bidi
 netifaces
+keyboard
+uiautomation
+requests

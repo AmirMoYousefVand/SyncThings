@@ -333,7 +333,7 @@ class SyncThingsApp(ctk.CTk):
         if not self.network_manager.connected_peer_ip:
             self.log("Cannot capture browser: Not connected to any device.")
             return
-        
+
         self.log("Triggering browser capture in background...")
         import threading
         threading.Thread(target=self._capture_browser_thread, daemon=True).start()
@@ -343,51 +343,70 @@ class SyncThingsApp(ctk.CTk):
             import uiautomation as auto
             import requests
             import os
-            
+
             self.log("Searching for active browser window...")
             url = None
-            
+
+            browser = auto.WindowControl(ClassName='Chrome_WidgetWin_1') # Works for Chrome/Edge
+            if not browser.Exists(0, 0):
+                browser = auto.WindowControl(ClassName='MozillaWindowClass') # Firefox
+
+            if not browser.Exists(0, 0):
+                self.log("Browser not found.")
+                return
+
             # Simple heuristic: try to find an EditControl that might be the address bar
             # Or Name="Address and search bar"
-            
-            # Let's iterate over top level windows
-            for win in auto.GetRootControl().GetChildren():
-                if "chrome" in win.ClassName.lower() or "firefox" in win.ClassName.lower() or "msedge" in win.ClassName.lower():
-                    # Attempt to find the address bar
-                    try:
-                        addr_bar = win.EditControl(Name="Address and search bar")
-                        if not addr_bar.Exists(0, 0):
-                            addr_bar = win.EditControl(Name="Search or enter web address")
-                        if addr_bar.Exists(0, 0):
-                            url = addr_bar.GetValuePattern().Value
-                            if url:
-                                break
-                    except:
-                        pass
-            
+            try:
+                addr_bar = browser.EditControl(Name="Address and search bar")
+                if not addr_bar.Exists(0, 0):
+                    addr_bar = browser.EditControl(Name="Search or enter web address")
+                if not addr_bar.Exists(0, 0):
+                    addr_bar = browser.EditControl() # Just any edit control as fallback
+                if addr_bar.Exists(0, 0):
+                    url = addr_bar.GetValuePattern().Value
+            except:
+                pass
+
             if not url:
                 self.log("Could not find a valid URL in active browser.")
                 return
-                
+
             if not url.startswith("http"):
                 url = "https://" + url
-                
+
             self.log(f"Capturing URL: {url}")
-            
+
             try:
-                resp = requests.get(url, timeout=10)
-                html_content = resp.text
+                resp = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
+
+                # Check if it's a login page or not accessible
+                if resp.status_code == 200 and "login" not in url.lower():
+                    html_content = resp.text
+                else:
+                    raise Exception(f"Status code {resp.status_code} or login page")
             except Exception as e:
-                self.log(f"Failed to download HTML via requests: {e}")
-                html_content = f"<html><body style='font-family: sans-serif; padding: 20px;'><a href='{url}'>{url}</a><br><br>Failed to capture page content.</body></html>"
-                
+                self.log(f"Failed to download HTML via requests: {e}. Trying fallback method...")
+                try:
+                    # Fallback: Extract text from browser tree
+                    doc = browser.DocumentControl()
+                    if doc.Exists(0, 0):
+                        text = doc.Name
+                    else:
+                        text = "Failed to extract text from document."
+
+                    html_content = f"<html><body style='font-family: sans-serif; padding: 40px; font-size: 16px;'><h1>Captured from {url}</h1><pre>{text}</pre></body></html>"
+                except Exception as ex:
+                    self.log(f"Fallback method failed: {ex}")
+                    html_content = f"<html><body style='font-family: sans-serif; padding: 20px;'><a href='{url}'>{url}</a><br><br>Failed to capture page content.</body></html>"
+
             temp_file = os.path.join(os.environ.get("TEMP", "."), "browser_sync_capture.html")
             with open(temp_file, "w", encoding="utf-8") as f:
                 f.write(html_content)
-                
+
             self.network_manager.send_file_packet(config.TYPE_BROWSER_SYNC, temp_file)
             self.log(self.tr("browser_captured", default="Browser captured and sent."))
-            
+
         except Exception as e:
             self.log(f"Browser capture error: {e}")
 
@@ -1438,8 +1457,35 @@ class SyncThingsApp(ctk.CTk):
                 os.remove(data) # clean up the temp streamed zip
             except:
                 pass
+            
+            self.after(500, self._hide_progress)
+            self.log(config.TRANSLATIONS["en"]["file_received"])
+            
+        elif data_type == config.TYPE_BROWSER_SYNC:
+            import os
+            import webbrowser
+            # data is the temp filepath
+            self.log("Browser sync content received. Opening in default browser...")
+            # We don't want to delete it immediately because the browser needs to read it
+            # We will just open it
+            try:
+                os.startfile(data)
+            except AttributeError:
+                # Fallback for non-Windows (though this is Windows specific usually)
+                webbrowser.open('file://' + os.path.realpath(data))
+            except Exception as e:
+                self.log(f"Failed to open browser sync file: {e}")
+                
+            self.after(500, self._hide_progress)
 
             self.log(f"{config.TRANSLATIONS['en']['file_received']} ({file_size / 1048576:.2f} MB)")
+        elif data_type == config.TYPE_BROWSER_SYNC:
+            import os
+            try:
+                os.startfile(data)
+                self.log("Browser sync received and opened in default browser.")
+            except Exception as e:
+                self.log(f"Failed to open browser sync file: {e}")
         elif data_type == config.TYPE_SINGLE_FILE_META:
             # Metadata packet for single file
             try:

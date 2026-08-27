@@ -438,7 +438,7 @@ class NetworkManager:
                 if size > 0:
                     import config
                     progress_cb = self.callbacks.get('on_progress')
-                    if data_type == config.TYPE_FILES or data_type == config.TYPE_SINGLE_FILE:
+                    if data_type == config.TYPE_FILES or data_type == config.TYPE_SINGLE_FILE or data_type == config.TYPE_BROWSER_SYNC:
                         import tempfile
                         import os
                         temp_file = tempfile.mktemp(suffix=".tmp")

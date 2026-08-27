@@ -27,6 +27,7 @@ TYPE_PROFILE = 4
 TYPE_SINGLE_FILE = 5
 TYPE_SINGLE_FILE_META = 6
 TYPE_DISCONNECT = 9
+TYPE_BROWSER_SYNC = 15
 
 # File paths and fonts
 CONFIG_FILE = "sync_things_profile.json"
@@ -105,7 +106,12 @@ TRANSLATIONS = {
         "sending_image": "Sending image...",
         "sending_file": "Compressing and sending file...",
         "file_sent_success": "File sent successfully.",
-        "user_prefix": "User_"
+        "user_prefix": "User_",
+        "browser_sync": "Browser Sync",
+        "capture_browser": "Capture Current Browser Now",
+        "set_hotkey": "Set Hotkey (e.g., Ctrl+Shift+B)",
+        "browser_sync_instructions": "This feature captures the currently open webpage in your browser and sends it to the connected device.",
+        "browser_captured": "Browser captured and sent."
     },
     "fa": {
         "hello": "سلام",
@@ -176,6 +182,11 @@ TRANSLATIONS = {
         "sending_image": "ارسال تصویر...",
         "sending_file": "در حال فشرده‌سازی و ارسال فایل...",
         "file_sent_success": "ارسال فایل با موفقیت انجام شد.",
-        "user_prefix": "کاربر_"
+        "user_prefix": "کاربر_",
+        "browser_sync": "هم رسانی مرورگر",
+        "capture_browser": "ضبط صفحه مرورگر فعلی",
+        "set_hotkey": "تنظیم کلید میانبر (مثلاً Ctrl+Shift+B)",
+        "browser_sync_instructions": "این قابلیت صفحه وب باز فعلی در مرورگر شما را ضبط کرده و به دستگاه متصل ارسال می‌کند.",
+        "browser_captured": "مرورگر ضبط و ارسال شد."
     }
 }
