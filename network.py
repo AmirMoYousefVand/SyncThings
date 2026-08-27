@@ -100,10 +100,19 @@ class NetworkManager:
                 self.udp_socket.sendto(msg, ("255.255.255.255", UDP_PORT))
 
                 for ip, broadcast in utils.get_local_ips():
-                    try:
-                        self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
-                    except:
-                        pass
+                    if broadcast:
+                        try:
+                            # Standard send (might use wrong interface)
+                            self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
+
+                            # Force send out of the specific interface to bypass Windows routing metrics
+                            temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            temp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                            temp_sock.bind((ip, 0)) # Bind to the specific adapter's IP
+                            temp_sock.sendto(msg, (broadcast, UDP_PORT))
+                            temp_sock.close()
+                        except:
+                            pass
             except:
                 pass
 
@@ -117,10 +126,19 @@ class NetworkManager:
                         self.udp_socket.sendto(msg, ("<broadcast>", UDP_PORT))
                         self.udp_socket.sendto(msg, ("255.255.255.255", UDP_PORT))
                         for ip, broadcast in utils.get_local_ips():
-                            try:
-                                self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
-                            except:
-                                pass
+                            if broadcast:
+                                try:
+                                    # Standard send (might use wrong interface)
+                                    self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
+
+                                    # Force send out of the specific interface to bypass Windows routing metrics
+                                    temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                                    temp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                                    temp_sock.bind((ip, 0)) # Bind to the specific adapter's IP
+                                    temp_sock.sendto(msg, (broadcast, UDP_PORT))
+                                    temp_sock.close()
+                                except:
+                                    pass
                     except:
                         pass
                 burst_mode = False
