@@ -407,6 +407,9 @@ class NetworkManager:
             return True
         except Exception as e:
             import logging
+            if self.cancel_event.is_set():
+                logging.info("Transfer cancelled by user (sender side). Connection kept alive.")
+                return False
             logging.error(f"Error sending file packet: {e}", exc_info=True)
             self.disconnect()
             if 'on_error' in self.callbacks:

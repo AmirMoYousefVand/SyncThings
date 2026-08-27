@@ -193,32 +193,41 @@ class SyncThingsApp(ctk.CTk):
         try:
             from PIL import Image
             import os
-            def get_icon(name):
-                # Dark icons for light theme, light icons for dark theme
+            def get_white_icon(name):
+                # Always white icons for sidebar/buttons with dark backgrounds
+                return ctk.CTkImage(
+                    light_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
+                    dark_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
+                    size=(24, 24)
+                )
+
+            def get_transfer_icon(name):
+                # Black in light theme, white in dark theme (for progress bar area)
                 return ctk.CTkImage(
                     light_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_dark.png"))),
                     dark_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
                     size=(24, 24)
                 )
 
-            self.icon_dash = get_icon("dash")
-            self.icon_connect = get_icon("connect")
-            self.icon_settings = get_icon("settings")
-            self.icon_github = get_icon("github")
-            self.icon_scan = get_icon("scan")
-            self.icon_plug = get_icon("plug")
-            self.icon_rand = get_icon("rand")
-            self.icon_upload = get_icon("upload")
+            self.icon_dash = get_white_icon("dash")
+            self.icon_connect = get_white_icon("connect")
+            self.icon_settings = get_white_icon("settings")
+            self.icon_github = get_white_icon("github")
+            self.icon_scan = get_white_icon("scan")
+            self.icon_plug = get_white_icon("plug")
+            self.icon_rand = get_white_icon("rand")
+            self.icon_upload = get_white_icon("upload")
 
-            self.icon_disconnect = get_icon("disconnect")
-            self.icon_refresh = get_icon("refresh")
-            self.icon_firewall = get_icon("firewall")
-            self.icon_lan = get_icon("lan")
-            self.icon_link = get_icon("link")
-            self.icon_trash = get_icon("trash")
-            self.icon_play = get_icon("play")
-            self.icon_pause = get_icon("pause")
-            self.icon_cancel = get_icon("cancel")
+            self.icon_disconnect = get_white_icon("disconnect")
+            self.icon_refresh = get_white_icon("refresh")
+            self.icon_firewall = get_white_icon("firewall")
+            self.icon_lan = get_white_icon("lan")
+            self.icon_link = get_white_icon("link")
+            self.icon_trash = get_white_icon("trash")
+            self.icon_sync = get_white_icon("sync")
+            self.icon_play = get_transfer_icon("play")
+            self.icon_pause = get_transfer_icon("pause")
+            self.icon_cancel = get_transfer_icon("cancel")
 
             self._icons_loaded = True
         except Exception as e:
@@ -258,6 +267,7 @@ class SyncThingsApp(ctk.CTk):
         self.nav_settings.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
         self.nav_browser = ctk.CTkButton(self.sidebar_frame, text="Browser Sync", font=self.get_main_font(15, "bold"),
+                                         image=self.icon_sync if self._icons_loaded else None,
                                          compound="left", anchor="w",
                                          command=lambda: self.show_frame("browser_sync"))
         self.nav_browser.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
@@ -308,28 +318,58 @@ class SyncThingsApp(ctk.CTk):
     def update_browser_ui_text(self):
         self.lbl_browser_title.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
         self.btn_capture.configure(text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"))
-        if hasattr(self, 'lbl_hotkey'):
-            self.lbl_hotkey.configure(text=utils.format_persian(self.tr("set_hotkey", default="Set Hotkey (e.g., Ctrl+Shift+B):")))
+        if hasattr(self, 'btn_record_hotkey'):
+            self.btn_record_hotkey.configure(text=utils.format_persian(self.tr("record_hotkey", default="Record Hotkey")))
 
-    def update_browser_hotkey(self):
-        hotkey = self.hotkey_entry.get()
-        if not hotkey:
-            return
-        
+    def _start_hotkey_record(self):
+        """Start listening for a key combination to set as the browser sync hotkey."""
+        import keyboard
+        self._hotkey_keys = set()
+        self._recording_hotkey = True
+        self.btn_record_hotkey.configure(text="Press keys now...", fg_color="#F59E0B")
+        self.log("Recording hotkey... Press your desired key combination.")
+
+        def on_key_event(event):
+            if not self._recording_hotkey:
+                return
+            if event.event_type == "down":
+                name = event.name
+                if name in ("ctrl", "ctrl_l", "ctrl_r"):
+                    self._hotkey_keys.add("ctrl")
+                elif name in ("shift", "shift_l", "shift_r"):
+                    self._hotkey_keys.add("shift")
+                elif name in ("alt", "alt_l", "alt_r"):
+                    self._hotkey_keys.add("alt")
+                elif name in ("win", "win_l", "win_r"):
+                    self._hotkey_keys.add("win")
+                else:
+                    # Non-modifier key pressed — combination is complete
+                    self._recording_hotkey = False
+                    keyboard.unhook_all()
+                    if self._hotkey_keys:
+                        combo = "+".join(sorted(self._hotkey_keys)) + "+" + name
+                    else:
+                        combo = name
+                    self.after(0, lambda: self._finalize_hotkey(combo))
+
+        keyboard.hook(on_key_event)
+
+    def _finalize_hotkey(self, combo):
+        """Register the captured hotkey combination."""
+        import keyboard
+        self.btn_record_hotkey.configure(text=combo, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
         try:
-            import keyboard
-            # Remove previous if exists
             if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
                 keyboard.remove_hotkey(self._current_browser_hotkey)
-            
-            keyboard.add_hotkey(hotkey, self.trigger_browser_sync, suppress=True)
-            self._current_browser_hotkey = hotkey
-            self.log(f"Browser sync hotkey set to: {hotkey}")
+            keyboard.add_hotkey(combo, self.trigger_browser_sync)
+            self._current_browser_hotkey = combo
+            self.log(f"Browser sync hotkey set to: {combo}")
         except Exception as e:
             self.log(f"Failed to set hotkey: {e}")
+            self.btn_record_hotkey.configure(text="Record Hotkey", fg_color="gray25")
 
     def trigger_browser_sync(self):
-        if not self.network_manager.connected_peer_ip:
+        if not self.network_manager.connected:
             self.log("Cannot capture browser: Not connected to any device.")
             return
 
@@ -560,21 +600,20 @@ class SyncThingsApp(ctk.CTk):
 
         hotkey_frame = ctk.CTkFrame(frame, fg_color="transparent")
         hotkey_frame.pack(pady=20)
-        
-        lbl_hotkey = ctk.CTkLabel(hotkey_frame, text=utils.format_persian(self.tr("set_hotkey", default="Set Hotkey (e.g., Ctrl+Shift+B):")), font=self.get_main_font(14))
+
+        lbl_hotkey = ctk.CTkLabel(hotkey_frame, text=utils.format_persian(self.tr("set_hotkey", default="Hotkey:")), font=self.get_main_font(14))
         lbl_hotkey.pack(side="left", padx=10)
-        
-        self.hotkey_entry = ctk.CTkEntry(hotkey_frame, width=150, font=self.get_main_font(14))
-        self.hotkey_entry.insert(0, "Ctrl+Shift+B")
-        self.hotkey_entry.pack(side="left")
-        
-        self.btn_set_hotkey = ctk.CTkButton(hotkey_frame, text=utils.format_persian(self.tr("ok", default="OK")), width=60, font=self.get_main_font(14), command=self.update_browser_hotkey)
-        self.btn_set_hotkey.pack(side="left", padx=10)
+
+        self.btn_record_hotkey = ctk.CTkButton(hotkey_frame, text=utils.format_persian(self.tr("record_hotkey", default="Record Hotkey")),
+                                                width=200, font=self.get_main_font(14),
+                                                fg_color="gray25", hover_color="gray40",
+                                                command=self._start_hotkey_record)
+        self.btn_record_hotkey.pack(side="left", padx=10)
 
         self.btn_capture = ctk.CTkButton(frame, text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"),
                                          command=self.trigger_browser_sync)
         self.btn_capture.pack(pady=30)
-        
+
         return frame
 
     def create_settings_frame(self):
