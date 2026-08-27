@@ -25,6 +25,7 @@ class NetworkManager:
         self.pause_event.set()  # Set means not paused
         self.cancel_event = threading.Event()
         self.connection_id = 0  # Monotonically increasing connection counter
+        self._cancel_disconnect = False  # Set True when cancel should NOT trigger full disconnect
 
     def get_local_ips(self):
         ips = []
@@ -447,6 +448,7 @@ class NetworkManager:
             return False
 
     def _receive_data_thread(self, conn, conn_id):
+        self._cancel_disconnect = False
         while self.connected and self.connection_id == conn_id:
             try:
                 header = self.recvall(conn, 9)
@@ -467,6 +469,9 @@ class NetworkManager:
                         suffix = ".html" if data_type == config.TYPE_BROWSER_SYNC else ".tmp"
                         temp_file = tempfile.mktemp(suffix=suffix)
                         success = self.recv_to_file(conn, size, temp_file, progress_callback=progress_cb)
+                        if not success and self.cancel_event.is_set():
+                            self._cancel_disconnect = True
+                            break
                         if success:
                             if 'on_data_received' in self.callbacks:
                                 self.callbacks['on_data_received'](data_type, temp_file)
@@ -486,7 +491,7 @@ class NetworkManager:
                 break
         # Only disconnect if this thread's connection is still the active one
         # Otherwise a newer connection has replaced us and we must not touch it
-        if self.connection_id == conn_id:
+        if self.connection_id == conn_id and not self._cancel_disconnect:
             self.disconnect()
             if 'on_error' in self.callbacks:
                 self.callbacks['on_error']("Connection lost.")

@@ -13,3 +13,4 @@ keyboard
 pynput
 uiautomation
 requests
+beautifulsoup4

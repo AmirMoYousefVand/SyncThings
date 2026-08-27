@@ -540,23 +540,60 @@ class SyncThingsApp(ctk.CTk):
             self.log(f"Capturing URL: {url}")
 
             try:
-                resp = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
+                resp = requests.get(url, timeout=15, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                })
 
-                # Check if it's a login page or not accessible
-                if resp.status_code == 200 and "login" not in url.lower():
-                    html_content = resp.text
-                else:
+                if resp.status_code != 200 or "login" in url.lower():
                     raise Exception(f"Status code {resp.status_code} or login page")
+
+                from urllib.parse import urljoin
+                from bs4 import BeautifulSoup
+                import base64
+
+                soup = BeautifulSoup(resp.text, 'html.parser')
+
+                # Inline external CSS from <link rel="stylesheet">
+                for link in soup.find_all('link', rel='stylesheet'):
+                    href = link.get('href')
+                    if not href:
+                        continue
+                    css_url = urljoin(url, href)
+                    try:
+                        css_resp = requests.get(css_url, timeout=10, headers={'User-Agent': resp.headers.get('User-Agent', '')})
+                        if css_resp.status_code == 200:
+                            style_tag = soup.new_tag('style')
+                            style_tag.string = css_resp.text
+                            link.replace_with(style_tag)
+                    except Exception:
+                        pass
+
+                # Convert images to base64 data URIs
+                for img in soup.find_all('img'):
+                    src = img.get('src')
+                    if not src or src.startswith('data:'):
+                        continue
+                    img_url = urljoin(url, src)
+                    try:
+                        img_resp = requests.get(img_url, timeout=10, headers={'User-Agent': resp.headers.get('User-Agent', '')})
+                        if img_resp.status_code == 200:
+                            content_type = img_resp.headers.get('Content-Type', 'image/png').split(';')[0].strip()
+                            b64 = base64.b64encode(img_resp.content).decode('utf-8')
+                            img['src'] = f"data:{content_type};base64,{b64}"
+                    except Exception:
+                        pass
+
+                html_content = str(soup)
+                self.log("Built self-contained HTML with inlined CSS and images.")
+
             except Exception as e:
-                self.log(f"Failed to download HTML via requests: {e}. Trying fallback method...")
+                self.log(f"Failed to build self-contained HTML: {e}. Trying fallback method...")
                 try:
-                    # Fallback: Extract text from browser tree
                     doc = browser.DocumentControl()
                     if doc.Exists(0, 0):
                         text = doc.Name
                     else:
                         text = "Failed to extract text from document."
-
                     html_content = f"<html><body style='font-family: sans-serif; padding: 40px; font-size: 16px;'><h1>Captured from {url}</h1><pre>{text}</pre></body></html>"
                 except Exception as ex:
                     self.log(f"Fallback method failed: {ex}")
