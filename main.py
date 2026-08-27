@@ -331,39 +331,44 @@ class SyncThingsApp(ctk.CTk):
             self.btn_record_hotkey.configure(text=utils.format_persian(self.tr("record_hotkey", default="Record Hotkey")))
 
     def _start_hotkey_record(self):
-        """Start listening for a key combination to set as the browser sync hotkey."""
+        """Start listening for a key combination using polling (most reliable method)."""
         self._recording_hotkey = True
         self.btn_record_hotkey.configure(text="Press keys now...", fg_color="#F59E0B")
-        self.log("Recording hotkey... Press your desired key combination.")
+        self.log("Recording hotkey... Press your desired key combination then release.")
 
         try:
             import keyboard
+            # Common letter/number keys to detect
+            sample_keys = list("abcdefghijklmnopqrstuvwxyz0123456789") + [
+                "f1","f2","f3","f4","f5","f6","f7","f8","f9","f10","f11","f12",
+                "space", "enter", "tab", "esc", "backspace", "delete",
+                "up", "down", "left", "right", "home", "end", "page up", "page down"
+            ]
 
-            def on_key_event(event):
+            def poll_keys():
                 if not self._recording_hotkey:
                     return
-                if event.event_type == "down":
-                    name = event.name
-                    # Skip pure modifier presses — wait for a non-modifier key
-                    if name in ("ctrl", "ctrl_l", "ctrl_r", "shift", "shift_l", "shift_r",
-                                 "alt", "alt_l", "alt_r", "win", "win_l", "win_r"):
+                # Check if any non-modifier key is pressed
+                for key in sample_keys:
+                    if keyboard.is_pressed(key):
+                        # Build combo from currently held modifiers
+                        self._recording_hotkey = False
+                        mods = []
+                        if keyboard.is_pressed("ctrl"):
+                            mods.append("ctrl")
+                        if keyboard.is_pressed("shift"):
+                            mods.append("shift")
+                        if keyboard.is_pressed("alt"):
+                            mods.append("alt")
+                        if keyboard.is_pressed("win"):
+                            mods.append("win")
+                        combo = "+".join(mods + [key]) if mods else key
+                        self.after(0, lambda: self._finalize_hotkey(combo))
                         return
-                    # Non-modifier key pressed — build combo from CURRENTLY held modifiers
-                    self._recording_hotkey = False
-                    keyboard.unhook_all()
-                    mods = []
-                    if keyboard.is_pressed("ctrl"):
-                        mods.append("ctrl")
-                    if keyboard.is_pressed("shift"):
-                        mods.append("shift")
-                    if keyboard.is_pressed("alt"):
-                        mods.append("alt")
-                    if keyboard.is_pressed("win"):
-                        mods.append("win")
-                    combo = "+".join(mods + [name]) if mods else name
-                    self.after(0, lambda: self._finalize_hotkey(combo))
+                # Check every 100ms
+                self.after(100, poll_keys)
 
-            keyboard.hook(on_key_event)
+            self.after(100, poll_keys)
             self._hotkey_backend = "keyboard"
         except Exception:
             self._start_hotkey_record_pynput()
