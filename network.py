@@ -40,6 +40,14 @@ class NetworkManager:
         self.avatar_b64 = avatar_b64
 
     def start_network(self):
+        import utils
+        # Ensure firewall rules exist so inbound discovery packets are not blocked.
+        # On first run this will request admin elevation; subsequent runs are silent.
+        try:
+            utils.ensure_firewall_rules()
+        except Exception:
+            pass
+
         # Allow reusing the address on Windows for TCP if it crashed previously
         self.tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:

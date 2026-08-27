@@ -132,6 +132,24 @@ def fix_windows_firewall():
         ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", "/c " + cmd, None, 0)
         return int(ret) > 32 # ShellExecuteW returns > 32 on success
 
+def ensure_firewall_rules():
+    """Silently checks if firewall rules exist; only requests admin elevation if they don't."""
+    import subprocess
+    try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        # Check if both rules already exist
+        result = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", "name=all", "dir=in", "protocol=UDP", "localport=49153"],
+            capture_output=True, text=True, startupinfo=startupinfo
+        )
+        if "SyncThings Local UDP" in result.stdout:
+            return True  # Rules already exist, no elevation needed
+    except Exception:
+        pass
+    # Rules don't exist yet, request elevation to create them
+    return fix_windows_firewall()
+
 def setup_direct_lan_ip():
     """Finds the active Ethernet connection and sets a random static IP for a direct LAN cable connection."""
     import ctypes
@@ -163,15 +181,18 @@ def setup_direct_lan_ip():
         ip_octet = random.randint(10, 250)
         ip_addr = f"192.168.137.{ip_octet}"
 
-        # Setup IP and clear any gateway to ensure it's a pure local link
-        cmd = f'netsh interface ipv4 set address name="{adapter_name}" static {ip_addr} 255.255.255.0'
+        # Setup IP, clear any gateway for pure local link, AND add firewall rules.
+        # Direct LAN connections default to 'Public' profile which blocks inbound UDP unless explicitly allowed.
+        cmd = (f'netsh interface ipv4 set address name="{adapter_name}" static {ip_addr} 255.255.255.0 & '
+               f'netsh advfirewall firewall add rule name="SyncThings Local" dir=in action=allow protocol=TCP localport=49152 profile=any & '
+               f'netsh advfirewall firewall add rule name="SyncThings Local UDP" dir=in action=allow protocol=UDP localport=49153 profile=any')
 
         if is_admin:
             os.system(cmd)
-            return True, f"IP {ip_addr} assigned to {adapter_name}"
+            return True, f"IP {ip_addr} assigned to {adapter_name} and firewall configured."
         else:
             ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", "/c " + cmd, None, 0)
-            return int(ret) > 32, "Requested elevation to set IP."
+            return int(ret) > 32, "Requested elevation to set IP and configure firewall."
 
     except Exception as e:
         return False, str(e)
@@ -198,24 +219,3 @@ def clear_temp_cache():
     except Exception as e:
         logging.error(f"Error clearing cache: {e}")
         return False
-    """Requests Admin privileges and unblocks the app's TCP/UDP ports in Windows Firewall."""
-    import ctypes
-    import sys
-    try:
-        # Check if already admin
-        is_admin = ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        is_admin = False
-
-    # The command to run
-    # We add an inbound/outbound rule for our custom ports
-    cmd = 'netsh advfirewall firewall add rule name="SyncThings Local" dir=in action=allow protocol=TCP localport=49152 & ' \
-          'netsh advfirewall firewall add rule name="SyncThings Local UDP" dir=in action=allow protocol=UDP localport=49153'
-
-    if is_admin:
-        os.system(cmd)
-        return True
-    else:
-        # Request elevation and run the command
-        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", "/c " + cmd, None, 0)
-        return int(ret) > 32 # ShellExecuteW returns > 32 on success
