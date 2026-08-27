@@ -24,6 +24,7 @@ class NetworkManager:
         self.pause_event = threading.Event()
         self.pause_event.set()  # Set means not paused
         self.cancel_event = threading.Event()
+        self.connection_id = 0  # Monotonically increasing connection counter
 
     def get_local_ips(self):
         ips = []
@@ -155,7 +156,7 @@ class NetworkManager:
 
     def _udp_listen_thread(self):
         self.udp_socket.settimeout(1.0)
-        while self.discovery_running:
+        while True:
             try:
                 # Increased buffer size to 65535 to prevent truncation of base64 mini avatars
                 data, addr = self.udp_socket.recvfrom(65535)
@@ -276,26 +277,34 @@ class NetworkManager:
             sock.close()
 
     def _connect_success(self, sock, ip, peer_name="Unknown"):
+        # Clean up any stale connection first instead of silently rejecting
         if self.connected:
-            return
+            self.disconnect()
+
         self.peer_socket = sock
         self.connected = True
+        self.connection_id += 1
         self.stop_discovery()
+        self.reset_transfer_events()
         if 'on_connection_success' in self.callbacks:
             self.callbacks['on_connection_success'](ip, peer_name)
 
-        threading.Thread(target=self._receive_data_thread, args=(sock,), daemon=True).start()
+        threading.Thread(target=self._receive_data_thread, args=(sock, self.connection_id), daemon=True).start()
 
     def disconnect(self, send_signal=False):
-        if send_signal and self.connected and self.peer_socket:
+        # Set connected=False FIRST to prevent new connections from being rejected
+        # and to ensure stale receiver threads exit cleanly.
+        self.connected = False
+        self.cancel_transfer()
+
+        if send_signal and self.peer_socket:
             try:
                 # Send TYPE_DISCONNECT (9) with empty payload
                 header = struct.pack('>BQ', 9, 0)
                 self.peer_socket.sendall(header)
             except:
                 pass
-        self.connected = False
-        self.cancel_transfer()
+
         if self.peer_socket:
             try:
                 self.peer_socket.close()
@@ -449,8 +458,8 @@ class NetworkManager:
                 self.callbacks['on_error']("Connection lost.")
             return False
 
-    def _receive_data_thread(self, conn):
-        while self.connected:
+    def _receive_data_thread(self, conn, conn_id):
+        while self.connected and self.connection_id == conn_id:
             try:
                 header = self.recvall(conn, 9)
                 if not header:
@@ -486,9 +495,12 @@ class NetworkManager:
                                 self.callbacks['on_data_received'](data_type, data)
             except:
                 break
-        self.disconnect()
-        if 'on_error' in self.callbacks:
-            self.callbacks['on_error']("Connection lost.")
+        # Only disconnect if this thread's connection is still the active one
+        # Otherwise a newer connection has replaced us and we must not touch it
+        if self.connection_id == conn_id:
+            self.disconnect()
+            if 'on_error' in self.callbacks:
+                self.callbacks['on_error']("Connection lost.")
 
     def recv_to_file(self, sock, n, filepath, progress_callback=None):
         self.reset_transfer_events()
@@ -507,7 +519,10 @@ class NetworkManager:
             while received < n:
                 if self.cancel_event.is_set():
                     logging.error("Transfer cancelled by user")
-                    self.disconnect(send_signal=True)
+                    try:
+                        sock.close()
+                    except:
+                        pass
                     return False
                 self.pause_event.wait()
 
@@ -553,7 +568,10 @@ class NetworkManager:
         while received < n:
             if self.cancel_event.is_set():
                 logging.error("Transfer cancelled by user")
-                self.disconnect(send_signal=True)
+                try:
+                    sock.close()
+                except:
+                    pass
                 return None
             self.pause_event.wait()
 

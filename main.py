@@ -194,12 +194,11 @@ class SyncThingsApp(ctk.CTk):
             from PIL import Image
             import os
             def get_icon(name):
-                # The user requested that all icons be white regardless of the theme
-                # We saved the white icons as '_light.png' in the fetch script
+                # Dark icons for light theme, light icons for dark theme
                 return ctk.CTkImage(
-                    light_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
+                    light_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_dark.png"))),
                     dark_image=Image.open(utils.resource_path(os.path.join("Icons", f"{name}_light.png"))),
-                    size=(20, 20)
+                    size=(24, 24)
                 )
 
             self.icon_dash = get_icon("dash")
