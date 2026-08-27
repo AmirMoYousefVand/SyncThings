@@ -479,7 +479,8 @@ class NetworkManager:
                     if data_type == config.TYPE_FILES or data_type == config.TYPE_SINGLE_FILE or data_type == config.TYPE_BROWSER_SYNC:
                         import tempfile
                         import os
-                        temp_file = tempfile.mktemp(suffix=".tmp")
+                        suffix = ".html" if data_type == config.TYPE_BROWSER_SYNC else ".tmp"
+                        temp_file = tempfile.mktemp(suffix=suffix)
                         success = self.recv_to_file(conn, size, temp_file, progress_callback=progress_cb)
                         if success:
                             if 'on_data_received' in self.callbacks:
@@ -509,11 +510,14 @@ class NetworkManager:
         self.reset_transfer_events()
         import logging
         import time
+        import os
         chunk_size = 4194304 # 4MB chunk
         logging.info(f"Receiving streaming file (Size: {n/1048576:.2f} MB, Chunking: {chunk_size/1024:.0f} KB) straight to {filepath}")
 
         received = 0
         last_cb_time = 0
+        original_timeout = sock.gettimeout()
+        sock.settimeout(1.0)  # 1s timeout to check cancel periodically
 
         buffer = bytearray(chunk_size)
         view = memoryview(buffer)
@@ -521,11 +525,12 @@ class NetworkManager:
         with open(filepath, 'wb') as f:
             while received < n:
                 if self.cancel_event.is_set():
-                    logging.error("Transfer cancelled by user")
+                    logging.info("Transfer cancelled by user. Cleaning up temp file.")
                     try:
-                        sock.close()
+                        os.remove(filepath)
                     except:
                         pass
+                    sock.settimeout(original_timeout)
                     return False
                 self.pause_event.wait()
 
@@ -535,9 +540,15 @@ class NetworkManager:
                 target_read = min(n - received, chunk_size)
 
                 while bytes_accumulated < target_read:
-                    bytes_recv = sock.recv_into(view[bytes_accumulated:target_read], target_read - bytes_accumulated)
+                    try:
+                        bytes_recv = sock.recv_into(view[bytes_accumulated:target_read], target_read - bytes_accumulated)
+                    except socket.timeout:
+                        if self.cancel_event.is_set():
+                            break
+                        continue
                     if not bytes_recv:
                         logging.error("Socket closed prematurely during receive.")
+                        sock.settimeout(original_timeout)
                         return False
                     bytes_accumulated += bytes_recv
 
@@ -550,6 +561,7 @@ class NetworkManager:
                     progress_callback(received, n)
                     last_cb_time = now
 
+        sock.settimeout(original_timeout)
         logging.info("Finished receiving all chunks.")
         return True
 

@@ -179,12 +179,21 @@ class SyncThingsApp(ctk.CTk):
         self.qr_scanner = scanner.QRScanner(on_qr_scanned=self.on_qr_scanned)
 
         # Initial Hotkey for browser sync
+        self._current_browser_hotkey = None
+        self._hotkey_backend = None
         try:
             import keyboard
             self._current_browser_hotkey = "ctrl+shift+b"
             keyboard.add_hotkey(self._current_browser_hotkey, self.trigger_browser_sync, suppress=True)
+            self._hotkey_backend = "keyboard"
         except Exception:
-            self._current_browser_hotkey = None
+            # Fall back to pynput
+            try:
+                self._current_browser_hotkey = "ctrl+shift+b"
+                self._register_pynput_hotkey(self._current_browser_hotkey)
+                self._hotkey_backend = "pynput"
+            except Exception:
+                self._current_browser_hotkey = None
             
         # Start Discovery
         self.network_manager.start_discovery()
@@ -323,50 +332,159 @@ class SyncThingsApp(ctk.CTk):
 
     def _start_hotkey_record(self):
         """Start listening for a key combination to set as the browser sync hotkey."""
-        import keyboard
-        self._hotkey_keys = set()
         self._recording_hotkey = True
         self.btn_record_hotkey.configure(text="Press keys now...", fg_color="#F59E0B")
         self.log("Recording hotkey... Press your desired key combination.")
 
-        def on_key_event(event):
-            if not self._recording_hotkey:
-                return
-            if event.event_type == "down":
-                name = event.name
-                if name in ("ctrl", "ctrl_l", "ctrl_r"):
-                    self._hotkey_keys.add("ctrl")
-                elif name in ("shift", "shift_l", "shift_r"):
-                    self._hotkey_keys.add("shift")
-                elif name in ("alt", "alt_l", "alt_r"):
-                    self._hotkey_keys.add("alt")
-                elif name in ("win", "win_l", "win_r"):
-                    self._hotkey_keys.add("win")
-                else:
-                    # Non-modifier key pressed — combination is complete
+        try:
+            import keyboard
+
+            def on_key_event(event):
+                if not self._recording_hotkey:
+                    return
+                if event.event_type == "down":
+                    name = event.name
+                    # Skip pure modifier presses — wait for a non-modifier key
+                    if name in ("ctrl", "ctrl_l", "ctrl_r", "shift", "shift_l", "shift_r",
+                                 "alt", "alt_l", "alt_r", "win", "win_l", "win_r"):
+                        return
+                    # Non-modifier key pressed — build combo from CURRENTLY held modifiers
                     self._recording_hotkey = False
                     keyboard.unhook_all()
-                    if self._hotkey_keys:
-                        combo = "+".join(sorted(self._hotkey_keys)) + "+" + name
-                    else:
-                        combo = name
+                    mods = []
+                    if keyboard.is_pressed("ctrl"):
+                        mods.append("ctrl")
+                    if keyboard.is_pressed("shift"):
+                        mods.append("shift")
+                    if keyboard.is_pressed("alt"):
+                        mods.append("alt")
+                    if keyboard.is_pressed("win"):
+                        mods.append("win")
+                    combo = "+".join(mods + [name]) if mods else name
                     self.after(0, lambda: self._finalize_hotkey(combo))
 
-        keyboard.hook(on_key_event)
+            keyboard.hook(on_key_event)
+            self._hotkey_backend = "keyboard"
+        except Exception:
+            self._start_hotkey_record_pynput()
+
+    def _start_hotkey_record_pynput(self):
+        """Fallback hotkey recording using pynput."""
+        from pynput import keyboard as pynput_keyboard
+
+        self._pynput_pressed_keys = set()
+
+        def get_key_name(key):
+            """Convert pynput key to a normalized name."""
+            if key == pynput_keyboard.Key.ctrl_l or key == pynput_keyboard.Key.ctrl_r:
+                return "ctrl"
+            elif key == pynput_keyboard.Key.shift or key == pynput_keyboard.Key.shift_r:
+                return "shift"
+            elif key == pynput_keyboard.Key.alt_l or key == pynput_keyboard.Key.alt_r:
+                return "alt"
+            elif key == pynput_keyboard.Key.cmd or key == pynput_keyboard.Key.cmd_r:
+                return "win"
+            elif hasattr(key, 'char') and key.char:
+                return key.char
+            else:
+                return str(key).replace('Key.', '')
+
+        def on_press(key):
+            if not self._recording_hotkey:
+                return False  # Stop listener
+            name = get_key_name(key)
+            if name in ("ctrl", "shift", "alt", "win"):
+                self._pynput_pressed_keys.add(name)
+            else:
+                # Non-modifier key pressed — combination is complete
+                self._recording_hotkey = False
+                if self._pynput_pressed_keys:
+                    combo = "+".join(sorted(self._pynput_pressed_keys)) + "+" + name
+                else:
+                    combo = name
+                self.after(0, lambda: self._finalize_hotkey(combo))
+                return False  # Stop listener
+
+        self._pynput_listener = pynput_keyboard.Listener(on_press=on_press)
+        self._pynput_listener.start()
+        self._hotkey_backend = "pynput"
 
     def _finalize_hotkey(self, combo):
         """Register the captured hotkey combination."""
-        import keyboard
         self.btn_record_hotkey.configure(text=combo, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
+        backend = getattr(self, '_hotkey_backend', 'keyboard')
         try:
-            if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
-                keyboard.remove_hotkey(self._current_browser_hotkey)
-            keyboard.add_hotkey(combo, self.trigger_browser_sync)
+            if backend == "keyboard":
+                import keyboard
+                if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
+                    keyboard.remove_hotkey(self._current_browser_hotkey)
+                keyboard.add_hotkey(combo, self.trigger_browser_sync)
+            elif backend == "pynput":
+                # Stop any previous pynput hotkey listener
+                if hasattr(self, '_pynput_hotkey_listener') and self._pynput_hotkey_listener is not None:
+                    try:
+                        self._pynput_hotkey_listener.stop()
+                    except:
+                        pass
+                # Create a new global hotkey listener with pynput
+                self._register_pynput_hotkey(combo)
             self._current_browser_hotkey = combo
             self.log(f"Browser sync hotkey set to: {combo}")
+            # Update dashboard hotkey label if it exists
+            if hasattr(self, 'lbl_hotkey_display'):
+                self.lbl_hotkey_display.configure(text=f"Browser Sync: {combo}")
         except Exception as e:
             self.log(f"Failed to set hotkey: {e}")
             self.btn_record_hotkey.configure(text="Record Hotkey", fg_color="gray25")
+
+    def _register_pynput_hotkey(self, combo):
+        """Register a global hotkey using pynput."""
+        from pynput import keyboard as pynput_keyboard
+
+        # Parse combo string into sets
+        parts = combo.lower().split("+")
+        required_modifiers = set()
+        trigger_key = None
+        for p in parts:
+            if p in ("ctrl", "shift", "alt", "win"):
+                required_modifiers.add(p)
+            else:
+                trigger_key = p
+
+        if not trigger_key:
+            return
+
+        def get_key_name(key):
+            if key == pynput_keyboard.Key.ctrl_l or key == pynput_keyboard.Key.ctrl_r:
+                return "ctrl"
+            elif key == pynput_keyboard.Key.shift or key == pynput_keyboard.Key.shift_r:
+                return "shift"
+            elif key == pynput_keyboard.Key.alt_l or key == pynput_keyboard.Key.alt_r:
+                return "alt"
+            elif key == pynput_keyboard.Key.cmd or key == pynput_keyboard.Key.cmd_r:
+                return "win"
+            elif hasattr(key, 'char') and key.char:
+                return key.char
+            else:
+                return str(key).replace('Key.', '')
+
+        self._pynput_held_modifiers = set()
+
+        def on_press(key):
+            name = get_key_name(key)
+            if name in ("ctrl", "shift", "alt", "win"):
+                self._pynput_held_modifiers.add(name)
+            elif name == trigger_key:
+                if required_modifiers.issubset(self._pynput_held_modifiers):
+                    self.after(0, self.trigger_browser_sync)
+
+        def on_release(key):
+            name = get_key_name(key)
+            if name in self._pynput_held_modifiers:
+                self._pynput_held_modifiers.discard(name)
+
+        self._pynput_hotkey_listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
+        self._pynput_hotkey_listener.start()
 
     def trigger_browser_sync(self):
         if not self.network_manager.connected:
@@ -465,7 +583,13 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_status.pack(pady=(15, 5))
 
         self.lbl_ip = ctk.CTkLabel(self.status_card, text=f"{utils.format_persian(self.tr('your_ip', default='Your IP:'))} {self.get_primary_ip()}", font=self.get_main_font(14, "bold"))
-        self.lbl_ip.pack(pady=(0, 10))
+        self.lbl_ip.pack(pady=(0, 5))
+
+        hotkey_text = getattr(self, '_current_browser_hotkey', None)
+        self.lbl_hotkey_display = ctk.CTkLabel(self.status_card,
+            text=f"Browser Sync: {hotkey_text}" if hotkey_text else "Browser Sync: Not set",
+            font=self.get_main_font(12), text_color="gray")
+        self.lbl_hotkey_display.pack(pady=(0, 10))
 
         self.btn_disconnect = ctk.CTkButton(self.status_card, text=utils.format_persian(self.tr("disconnect", default="Disconnect")), font=self.get_main_font(15, "bold"),
                                             image=self.icon_disconnect if getattr(self, '_icons_loaded', False) else None, compound="left",
@@ -1513,17 +1637,9 @@ class SyncThingsApp(ctk.CTk):
                 webbrowser.open('file://' + os.path.realpath(data))
             except Exception as e:
                 self.log(f"Failed to open browser sync file: {e}")
-                
-            self.after(500, self._hide_progress)
 
-            self.log(f"{config.TRANSLATIONS['en']['file_received']} ({file_size / 1048576:.2f} MB)")
-        elif data_type == config.TYPE_BROWSER_SYNC:
-            import os
-            try:
-                os.startfile(data)
-                self.log("Browser sync received and opened in default browser.")
-            except Exception as e:
-                self.log(f"Failed to open browser sync file: {e}")
+            self.after(500, self._hide_progress)
+            self.log(config.TRANSLATIONS['en']['file_received'])
         elif data_type == config.TYPE_SINGLE_FILE_META:
             # Metadata packet for single file
             try:

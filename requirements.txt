@@ -10,5 +10,6 @@ arabic_reshaper
 python-bidi
 netifaces
 keyboard
+pynput
 uiautomation
 requests
