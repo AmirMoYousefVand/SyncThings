@@ -146,7 +146,8 @@ class SyncThingsApp(ctk.CTk):
                 "on_data_received": self.on_data_received,
                 "on_error": self.on_network_error,
                 "on_progress": lambda c, t: self._update_progress(c, t, "Receiving"),
-                "on_peer_disconnected": self.on_peer_disconnected
+                "on_peer_disconnected": self.on_peer_disconnected,
+                "on_control_event": self.on_control_event
             }
         )
         self.network_manager.update_profile_name(self.profile_name, self.avatar_b64)
@@ -177,6 +178,14 @@ class SyncThingsApp(ctk.CTk):
         # QR Scanner
         self.qr_scanner = scanner.QRScanner(on_qr_scanned=self.on_qr_scanned)
 
+        # Initial Hotkey for browser sync
+        try:
+            import keyboard
+            self._current_browser_hotkey = "ctrl+shift+b"
+            keyboard.add_hotkey(self._current_browser_hotkey, self.trigger_browser_sync, suppress=True)
+        except Exception:
+            self._current_browser_hotkey = None
+            
         # Start Discovery
         self.network_manager.start_discovery()
 
@@ -249,6 +258,11 @@ class SyncThingsApp(ctk.CTk):
                                           command=lambda: self.show_frame("settings"))
         self.nav_settings.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
+        self.nav_browser = ctk.CTkButton(self.sidebar_frame, text="Browser Sync", font=self.get_main_font(15, "bold"),
+                                         compound="left", anchor="w",
+                                         command=lambda: self.show_frame("browser_sync"))
+        self.nav_browser.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
+
         # GitHub Button
         self.btn_github = ctk.CTkButton(self.sidebar_frame, text="GitHub", font=self.get_main_font(14, "bold"),
                                         image=self.icon_github if self._icons_loaded else None, compound="left",
@@ -286,8 +300,97 @@ class SyncThingsApp(ctk.CTk):
         # 3. Settings Frame
         self.frames["settings"] = self.create_settings_frame()
 
+        # 4. Browser Sync Frame
+        self.frames["browser_sync"] = self.create_browser_sync_frame()
+
         # Show default
         self.show_frame("dashboard")
+
+    def update_browser_ui_text(self):
+        self.lbl_browser_title.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
+        self.btn_capture.configure(text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"))
+        if hasattr(self, 'lbl_hotkey'):
+            self.lbl_hotkey.configure(text=utils.format_persian(self.tr("set_hotkey", default="Set Hotkey (e.g., Ctrl+Shift+B):")))
+
+    def update_browser_hotkey(self):
+        hotkey = self.hotkey_entry.get()
+        if not hotkey:
+            return
+        
+        try:
+            import keyboard
+            # Remove previous if exists
+            if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
+                keyboard.remove_hotkey(self._current_browser_hotkey)
+            
+            keyboard.add_hotkey(hotkey, self.trigger_browser_sync, suppress=True)
+            self._current_browser_hotkey = hotkey
+            self.log(f"Browser sync hotkey set to: {hotkey}")
+        except Exception as e:
+            self.log(f"Failed to set hotkey: {e}")
+
+    def trigger_browser_sync(self):
+        if not self.network_manager.connected_peer_ip:
+            self.log("Cannot capture browser: Not connected to any device.")
+            return
+        
+        self.log("Triggering browser capture in background...")
+        import threading
+        threading.Thread(target=self._capture_browser_thread, daemon=True).start()
+
+    def _capture_browser_thread(self):
+        try:
+            import uiautomation as auto
+            import requests
+            import os
+            
+            self.log("Searching for active browser window...")
+            url = None
+            
+            # Simple heuristic: try to find an EditControl that might be the address bar
+            # Or Name="Address and search bar"
+            
+            # Let's iterate over top level windows
+            for win in auto.GetRootControl().GetChildren():
+                if "chrome" in win.ClassName.lower() or "firefox" in win.ClassName.lower() or "msedge" in win.ClassName.lower():
+                    # Attempt to find the address bar
+                    try:
+                        addr_bar = win.EditControl(Name="Address and search bar")
+                        if not addr_bar.Exists(0, 0):
+                            addr_bar = win.EditControl(Name="Search or enter web address")
+                        if addr_bar.Exists(0, 0):
+                            url = addr_bar.GetValuePattern().Value
+                            if url:
+                                break
+                    except:
+                        pass
+            
+            if not url:
+                self.log("Could not find a valid URL in active browser.")
+                return
+                
+            if not url.startswith("http"):
+                url = "https://" + url
+                
+            self.log(f"Capturing URL: {url}")
+            
+            try:
+                resp = requests.get(url, timeout=10)
+                html_content = resp.text
+            except Exception as e:
+                self.log(f"Failed to download HTML via requests: {e}")
+                html_content = f"<html><body style='font-family: sans-serif; padding: 20px;'><a href='{url}'>{url}</a><br><br>Failed to capture page content.</body></html>"
+                
+            temp_file = os.path.join(os.environ.get("TEMP", "."), "browser_sync_capture.html")
+            with open(temp_file, "w", encoding="utf-8") as f:
+                f.write(html_content)
+                
+            self.network_manager.send_file_packet(config.TYPE_BROWSER_SYNC, temp_file)
+            self.log(self.tr("browser_captured", default="Browser captured and sent."))
+            
+        except Exception as e:
+            self.log(f"Browser capture error: {e}")
+
 
     def create_dashboard_frame(self):
         frame = ctk.CTkFrame(self.main_container)
@@ -425,6 +528,35 @@ class SyncThingsApp(ctk.CTk):
                                              command=self.manual_connect)
         self.btn_manual_conn.pack(side="right")
 
+        return frame
+
+    def create_browser_sync_frame(self):
+        frame = ctk.CTkFrame(self.main_container)
+        frame.grid_columnconfigure(0, weight=1)
+
+        self.lbl_browser_title = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
+        self.lbl_browser_title.pack(pady=20)
+
+        instructions = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("browser_sync_instructions", default="This feature captures the currently open webpage in your browser and sends it to the connected device.")), font=self.get_main_font(14), wraplength=400)
+        instructions.pack(pady=10)
+
+        hotkey_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        hotkey_frame.pack(pady=20)
+        
+        lbl_hotkey = ctk.CTkLabel(hotkey_frame, text=utils.format_persian(self.tr("set_hotkey", default="Set Hotkey (e.g., Ctrl+Shift+B):")), font=self.get_main_font(14))
+        lbl_hotkey.pack(side="left", padx=10)
+        
+        self.hotkey_entry = ctk.CTkEntry(hotkey_frame, width=150, font=self.get_main_font(14))
+        self.hotkey_entry.insert(0, "Ctrl+Shift+B")
+        self.hotkey_entry.pack(side="left")
+        
+        self.btn_set_hotkey = ctk.CTkButton(hotkey_frame, text=utils.format_persian(self.tr("ok", default="OK")), width=60, font=self.get_main_font(14), command=self.update_browser_hotkey)
+        self.btn_set_hotkey.pack(side="left", padx=10)
+
+        self.btn_capture = ctk.CTkButton(frame, text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"),
+                                         command=self.trigger_browser_sync)
+        self.btn_capture.pack(pady=30)
+        
         return frame
 
     def create_settings_frame(self):
@@ -684,15 +816,19 @@ class SyncThingsApp(ctk.CTk):
         self.nav_dash.configure(text=utils.format_persian(self.tr("dashboard")))
         self.nav_connect.configure(text=utils.format_persian(self.tr("search_and_connect")))
         self.nav_settings.configure(text=utils.format_persian(self.tr("profile_settings")))
+        self.nav_browser.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")))
         # Update fonts in sidebar
         self.title_lbl.configure(font=self.get_main_font(24, "bold"))
         self.nav_dash.configure(font=self.get_main_font(15, "bold"))
         self.nav_connect.configure(font=self.get_main_font(15, "bold"))
         self.nav_settings.configure(font=self.get_main_font(15, "bold"))
+        self.nav_browser.configure(font=self.get_main_font(15, "bold"))
         if hasattr(self, 'btn_github'):
             self.btn_github.configure(font=self.get_main_font(14, "bold"))
 
     def update_ui_text(self):
+        self.lbl_browser_title.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
+        self.btn_capture.configure(text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"))
         self.lbl_dash_title.configure(text=utils.format_persian(self.tr("dashboard")), font=self.get_main_font(28, "bold"))
         self.lbl_log_title.configure(text=utils.format_persian(self.tr("event_history")), font=self.get_main_font(18, "bold"))
 
@@ -1179,6 +1315,31 @@ class SyncThingsApp(ctk.CTk):
             self.btn_pause_resume.configure(image=self.icon_pause if getattr(self, '_icons_loaded', False) else None)
             self.network_manager.resume_transfer()
             self.log("Transfer resumed.")
+
+    def on_control_event(self, action):
+        # Always execute UI changes in the main thread
+        self.after(0, lambda: self._handle_control_event(action))
+
+    def _handle_control_event(self, action):
+        if action == "CTRL:PAUSE":
+            self._transfer_paused = True
+            self.btn_pause_resume.configure(image=self.icon_play if getattr(self, '_icons_loaded', False) else None)
+            self.network_manager.pause_event.clear()
+            self.log("Transfer paused by peer.")
+        elif action == "CTRL:RESUME":
+            self._transfer_paused = False
+            self.btn_pause_resume.configure(image=self.icon_pause if getattr(self, '_icons_loaded', False) else None)
+            self.network_manager.pause_event.set()
+            self.log("Transfer resumed by peer.")
+        elif action == "CTRL:CANCEL":
+            self.network_manager.cancel_event.set()
+            self.network_manager.resume_transfer()
+            self.log("Transfer cancelled by peer.")
+            self._ui_polling_active = False
+            self.progress_bar.pack_forget()
+            self.progress_stats_frame.pack_forget()
+            self._transfer_paused = False
+            self.btn_pause_resume.configure(image=self.icon_pause if getattr(self, '_icons_loaded', False) else None)
 
     def cancel_transfer(self):
         self.network_manager.cancel_transfer()

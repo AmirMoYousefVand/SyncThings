@@ -133,6 +133,13 @@ class NetworkManager:
             try:
                 # Increased buffer size to 65535 to prevent truncation of base64 mini avatars
                 data, addr = self.udp_socket.recvfrom(65535)
+
+                if data.startswith(b"CTRL:"):
+                    action = data.decode('utf-8')
+                    if 'on_control_event' in self.callbacks:
+                        self.callbacks['on_control_event'](action)
+                    continue
+
                 if data.startswith(MAGIC_WORD):
                     payload = data[len(MAGIC_WORD):].decode('utf-8')
                     try:
@@ -272,13 +279,31 @@ class NetworkManager:
 
     def pause_transfer(self):
         self.pause_event.clear()
+        if self.connected and self.peer_socket:
+            try:
+                peer_ip = self.peer_socket.getpeername()[0]
+                self.udp_socket.sendto(b"CTRL:PAUSE", (peer_ip, UDP_PORT))
+            except:
+                pass
 
     def resume_transfer(self):
         self.pause_event.set()
+        if self.connected and self.peer_socket:
+            try:
+                peer_ip = self.peer_socket.getpeername()[0]
+                self.udp_socket.sendto(b"CTRL:RESUME", (peer_ip, UDP_PORT))
+            except:
+                pass
 
     def cancel_transfer(self):
         self.cancel_event.set()
         self.resume_transfer() # Unblock if paused
+        if self.connected and self.peer_socket:
+            try:
+                peer_ip = self.peer_socket.getpeername()[0]
+                self.udp_socket.sendto(b"CTRL:CANCEL", (peer_ip, UDP_PORT))
+            except:
+                pass
 
     def reset_transfer_events(self):
         self.cancel_event.clear()
