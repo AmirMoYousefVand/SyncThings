@@ -1376,7 +1376,7 @@ class SyncThingsApp(ctk.CTk):
     def _set_progress_simple(self, percentage):
         if percentage < 1.0:
             if not self.progress_bar.winfo_viewable():
-                self.progress_bar.pack(pady=10)
+                self.progress_bar.pack(fill="x", padx=20, pady=10)
             self.progress_bar.set(percentage)
         else:
             self.progress_bar.set(1.0)

@@ -96,6 +96,7 @@ class NetworkManager:
     def _broadcast_worker(self, burst_mode):
         import profile
         import utils
+        import os
         while self.discovery_running and not self.connected:
             try:
                 mini_avatar = profile.get_mini_avatar_b64()
@@ -107,12 +108,24 @@ class NetworkManager:
                 msg = MAGIC_WORD + payload
 
                 # Send to all known broadcast addresses
-                for _, broadcast in utils.get_local_ips():
+                for ip, broadcast in utils.get_local_ips():
                     if broadcast:
                         try:
-                            self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
+                            # Send from a socket bound to the specific interface to ensure it goes out that interface
+                            temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            temp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                            # On Windows, SO_REUSEADDR helps prevent access denied errors
+                            if os.name == 'nt':
+                                temp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                            temp_sock.bind((ip, 0))
+                            temp_sock.sendto(msg, (broadcast, UDP_PORT))
+                            temp_sock.close()
                         except:
-                            pass
+                            # Fallback if binding fails
+                            try:
+                                self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
+                            except:
+                                pass
                 # Also try global broadcast as fallback
                 try:
                     self.udp_socket.sendto(msg, ("255.255.255.255", UDP_PORT))
@@ -127,12 +140,21 @@ class NetworkManager:
                         break
                     time.sleep(0.2)
                     try:
-                        for _, broadcast in utils.get_local_ips():
+                        for ip, broadcast in utils.get_local_ips():
                             if broadcast:
                                 try:
-                                    self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
+                                    temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                                    temp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                                    if os.name == 'nt':
+                                        temp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                                    temp_sock.bind((ip, 0))
+                                    temp_sock.sendto(msg, (broadcast, UDP_PORT))
+                                    temp_sock.close()
                                 except:
-                                    pass
+                                    try:
+                                        self.udp_socket.sendto(msg, (broadcast, UDP_PORT))
+                                    except:
+                                        pass
                         self.udp_socket.sendto(msg, ("255.255.255.255", UDP_PORT))
                     except:
                         pass
