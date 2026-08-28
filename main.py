@@ -116,7 +116,7 @@ class SyncThingsApp(ctk.CTk):
         # State
         self.app_id = str(uuid.uuid4())
         self.default_name = f"User_{self.app_id[:6]}"
-        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions = profile.load_profile(self.default_name)
+        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey = profile.load_profile(self.default_name)
 
         # Set App Icon
         icon_path = utils.resource_path("app.ico")
@@ -186,12 +186,16 @@ class SyncThingsApp(ctk.CTk):
             self._current_browser_hotkey = "ctrl+shift+b"
             keyboard.add_hotkey(self._current_browser_hotkey, self.trigger_screen_sync, suppress=True)
             self._hotkey_backend = "keyboard"
+            if self.private_paste_hotkey:
+                keyboard.add_hotkey(self.private_paste_hotkey, self.trigger_private_paste, suppress=True)
         except Exception:
             # Fall back to pynput
             try:
                 self._current_browser_hotkey = "ctrl+shift+b"
-                self._register_pynput_hotkey(self._current_browser_hotkey)
+                self._register_pynput_hotkey(self._current_browser_hotkey, "capture")
                 self._hotkey_backend = "pynput"
+                if self.private_paste_hotkey:
+                    self._register_pynput_hotkey(self.private_paste_hotkey, "paste")
             except Exception:
                 self._current_browser_hotkey = None
             
@@ -234,6 +238,7 @@ class SyncThingsApp(ctk.CTk):
             self.icon_link = get_white_icon("link")
             self.icon_trash = get_white_icon("trash")
             self.icon_sync = get_white_icon("sync")
+            self.icon_private = get_white_icon("private")
             self.icon_play = get_transfer_icon("play")
             self.icon_pause = get_transfer_icon("pause")
             self.icon_cancel = get_transfer_icon("cancel")
@@ -275,10 +280,10 @@ class SyncThingsApp(ctk.CTk):
                                           command=lambda: self.show_frame("settings"))
         self.nav_settings.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
-        self.nav_browser = ctk.CTkButton(self.sidebar_frame, text="Browser Sync", font=self.get_main_font(15, "bold"),
-                                         image=self.icon_sync if self._icons_loaded else None,
+        self.nav_browser = ctk.CTkButton(self.sidebar_frame, text="Private Sync", font=self.get_main_font(15, "bold"),
+                                         image=self.icon_private if self._icons_loaded else None,
                                          compound="left", anchor="w",
-                                         command=lambda: self.show_frame("browser_sync"))
+                                         command=lambda: self.show_frame("private_sync"))
         self.nav_browser.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
 
         # GitHub Button
@@ -318,8 +323,8 @@ class SyncThingsApp(ctk.CTk):
         # 3. Settings Frame
         self.frames["settings"] = self.create_settings_frame()
 
-        # 4. Browser Sync Frame
-        self.frames["browser_sync"] = self.create_browser_sync_frame()
+        # 4. Private Sync Frame
+        self.frames["private_sync"] = self.create_private_sync_frame()
 
         # Show default
         self.show_frame("dashboard")
@@ -329,10 +334,14 @@ class SyncThingsApp(ctk.CTk):
         if hasattr(self, 'btn_record_hotkey'):
             self.btn_record_hotkey.configure(text=utils.format_persian(self.tr("record_hotkey", default="Record Hotkey")))
 
-    def _start_hotkey_record(self):
+    def _start_hotkey_record(self, target="capture"):
         """Start listening for a key combination using polling (most reliable method)."""
         self._recording_hotkey = True
-        self.btn_record_hotkey.configure(text="Press keys now...", fg_color="#F59E0B")
+        self._recording_target = target
+        if target == "capture":
+            self.btn_record_hotkey.configure(text="Press keys now...", fg_color="#F59E0B")
+        elif target == "paste":
+            self.btn_record_paste_hotkey.configure(text="Press keys now...", fg_color="#F59E0B")
         self.log("Recording hotkey... Press your desired key combination then release.")
 
         try:
@@ -362,7 +371,7 @@ class SyncThingsApp(ctk.CTk):
                         if keyboard.is_pressed("win"):
                             mods.append("win")
                         combo = "+".join(mods + [key]) if mods else key
-                        self.after(0, lambda: self._finalize_hotkey(combo))
+                        self.after(0, lambda target=self._recording_target: self._finalize_hotkey(combo, target))
                         return
                 # Check every 100ms
                 self.after(100, poll_keys)
@@ -370,7 +379,7 @@ class SyncThingsApp(ctk.CTk):
             self.after(100, poll_keys)
             self._hotkey_backend = "keyboard"
         except Exception:
-            self._start_hotkey_record_pynput()
+            self._start_hotkey_record_pynput(target)
 
     def _start_hotkey_record_pynput(self):
         """Fallback hotkey recording using pynput."""
@@ -406,42 +415,71 @@ class SyncThingsApp(ctk.CTk):
                     combo = "+".join(sorted(self._pynput_pressed_keys)) + "+" + name
                 else:
                     combo = name
-                self.after(0, lambda: self._finalize_hotkey(combo))
+                self.after(0, lambda target=self._recording_target: self._finalize_hotkey(combo, target))
                 return False  # Stop listener
 
         self._pynput_listener = pynput_keyboard.Listener(on_press=on_press)
         self._pynput_listener.start()
         self._hotkey_backend = "pynput"
 
-    def _finalize_hotkey(self, combo):
+    def _finalize_hotkey(self, combo, target="capture"):
         """Register the captured hotkey combination."""
-        self.btn_record_hotkey.configure(text=combo, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
+        if target == "capture":
+            self.btn_record_hotkey.configure(text=combo, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
+        elif target == "paste":
+            self.btn_record_paste_hotkey.configure(text=combo, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
         backend = getattr(self, '_hotkey_backend', 'keyboard')
         try:
             if backend == "keyboard":
                 import keyboard
-                if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
-                    keyboard.remove_hotkey(self._current_browser_hotkey)
-                keyboard.add_hotkey(combo, self.trigger_screen_sync)
+                if target == "capture":
+                    if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
+                        try:
+                            keyboard.remove_hotkey(self._current_browser_hotkey)
+                        except: pass
+                    keyboard.add_hotkey(combo, self.trigger_screen_sync, suppress=True)
+                    self._current_browser_hotkey = combo
+                    self.log(f"Screen sync hotkey set to: {combo}")
+                elif target == "paste":
+                    if hasattr(self, 'private_paste_hotkey') and self.private_paste_hotkey:
+                        try:
+                            keyboard.remove_hotkey(self.private_paste_hotkey)
+                        except: pass
+                    keyboard.add_hotkey(combo, self.trigger_private_paste, suppress=True)
+                    self.private_paste_hotkey = combo
+                    self.log(f"Private paste hotkey set to: {combo}")
             elif backend == "pynput":
-                # Stop any previous pynput hotkey listener
-                if hasattr(self, '_pynput_hotkey_listener') and self._pynput_hotkey_listener is not None:
-                    try:
-                        self._pynput_hotkey_listener.stop()
-                    except:
-                        pass
-                # Create a new global hotkey listener with pynput
-                self._register_pynput_hotkey(combo)
-            self._current_browser_hotkey = combo
-            self.log(f"Screen sync hotkey set to: {combo}")
-            # Update dashboard hotkey label if it exists
+                if target == "capture":
+                    if hasattr(self, '_pynput_hotkey_listener') and self._pynput_hotkey_listener is not None:
+                        try:
+                            self._pynput_hotkey_listener.stop()
+                        except:
+                            pass
+                    self._register_pynput_hotkey(combo, "capture")
+                    self._current_browser_hotkey = combo
+                    self.log(f"Screen sync hotkey set to: {combo}")
+                elif target == "paste":
+                    if hasattr(self, '_pynput_paste_hotkey_listener') and self._pynput_paste_hotkey_listener is not None:
+                        try:
+                            self._pynput_paste_hotkey_listener.stop()
+                        except: pass
+                    self._register_pynput_hotkey(combo, "paste")
+                    self.private_paste_hotkey = combo
+                    self.log(f"Private paste hotkey set to: {combo}")
+            
+            # Save to profile
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey)
+            
             if hasattr(self, 'lbl_hotkey_display'):
-                self.lbl_hotkey_display.configure(text=f"Screen Sync: {combo}")
+                self.lbl_hotkey_display.configure(text=f"Screen Sync: {self._current_browser_hotkey}")
         except Exception as e:
             self.log(f"Failed to set hotkey: {e}")
-            self.btn_record_hotkey.configure(text="Record Hotkey", fg_color="gray25")
+            if target == "capture":
+                self.btn_record_hotkey.configure(text="Record Hotkey", fg_color="gray25")
+            elif target == "paste":
+                self.btn_record_paste_hotkey.configure(text="Record Paste Hotkey", fg_color="gray25")
 
-    def _register_pynput_hotkey(self, combo):
+    def _register_pynput_hotkey(self, combo, target="capture"):
         """Register a global hotkey using pynput."""
         from pynput import keyboard as pynput_keyboard
 
@@ -480,15 +518,55 @@ class SyncThingsApp(ctk.CTk):
                 self._pynput_held_modifiers.add(name)
             elif name == trigger_key:
                 if required_modifiers.issubset(self._pynput_held_modifiers):
-                    self.after(0, self.trigger_screen_sync)
+                    if target == "capture":
+                        self.after(0, self.trigger_screen_sync)
+                    elif target == "paste":
+                        self.after(0, self.trigger_private_paste)
 
         def on_release(key):
             name = get_key_name(key)
             if name in self._pynput_held_modifiers:
                 self._pynput_held_modifiers.discard(name)
 
-        self._pynput_hotkey_listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
-        self._pynput_hotkey_listener.start()
+        listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
+        if target == "capture":
+            self._pynput_hotkey_listener = listener
+        elif target == "paste":
+            self._pynput_paste_hotkey_listener = listener
+
+    def trigger_private_paste(self):
+        import threading
+        threading.Thread(target=self._private_paste_thread, daemon=True).start()
+
+    def _private_paste_thread(self):
+        import time
+        # We need a slight delay so the user doesn't type while holding the hotkey modifiers
+        time.sleep(0.2)
+
+        try:
+            import win32clipboard
+            import win32con
+            import keyboard
+
+            win32clipboard.OpenClipboard()
+            has_text = False
+            text = ""
+            if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
+                text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+                has_text = True
+            win32clipboard.CloseClipboard()
+
+            if has_text and text:
+                keyboard.write(text, delay=0.005)
+                self.log("Private Paste executed.")
+            else:
+                self.after(0, lambda: ToastNotification(self, self.tr("error", default="Error"), "Private Paste is for text only."))
+        except Exception as e:
+            try: win32clipboard.CloseClipboard()
+            except: pass
+            self.log(f"Failed to execute private paste: {e}")
+            self.after(0, lambda: ToastNotification(self, self.tr("error", default="Error"), f"Private Paste failed: {e}"))
 
     def trigger_screen_sync(self):
         if not self.network_manager.connected:
@@ -678,7 +756,7 @@ class SyncThingsApp(ctk.CTk):
 
         return frame
 
-    def create_browser_sync_frame(self):
+    def create_private_sync_frame(self):
         frame = ctk.CTkFrame(self.main_container)
         frame.grid_columnconfigure(0, weight=1)
 
@@ -688,8 +766,9 @@ class SyncThingsApp(ctk.CTk):
         instructions = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("screen_sync_instructions", default="This feature captures your screen and sends it to the connected device. The screenshot will be copied to clipboard on the receiving end.")), font=self.get_main_font(14), wraplength=400)
         instructions.pack(pady=10)
 
+        # Screen Sync Hotkey
         hotkey_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        hotkey_frame.pack(pady=20)
+        hotkey_frame.pack(pady=(20, 10))
 
         lbl_hotkey = ctk.CTkLabel(hotkey_frame, text=utils.format_persian(self.tr("set_hotkey", default="Hotkey:")), font=self.get_main_font(14))
         lbl_hotkey.pack(side="left", padx=10)
@@ -697,8 +776,27 @@ class SyncThingsApp(ctk.CTk):
         self.btn_record_hotkey = ctk.CTkButton(hotkey_frame, text=utils.format_persian(self.tr("record_hotkey", default="Record Hotkey")),
                                                 width=200, font=self.get_main_font(14),
                                                 fg_color="gray25", hover_color="gray40",
-                                                command=self._start_hotkey_record)
+                                                command=lambda: self._start_hotkey_record("capture"))
         self.btn_record_hotkey.pack(side="left", padx=10)
+
+        # Private Paste Hotkey
+        paste_hotkey_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        paste_hotkey_frame.pack(pady=10)
+
+        lbl_paste_hotkey = ctk.CTkLabel(paste_hotkey_frame, text=utils.format_persian(self.tr("private_paste_hotkey", default="Private Paste Hotkey:")), font=self.get_main_font(14))
+        lbl_paste_hotkey.pack(side="left", padx=10)
+
+        self.btn_record_paste_hotkey = ctk.CTkButton(paste_hotkey_frame, text=utils.format_persian(self.tr("record_paste_hotkey", default="Record Paste Hotkey")),
+                                                width=200, font=self.get_main_font(14),
+                                                fg_color="gray25", hover_color="gray40",
+                                                command=lambda: self._start_hotkey_record("paste"))
+        self.btn_record_paste_hotkey.pack(side="left", padx=10)
+
+        if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
+            self.btn_record_hotkey.configure(text=self._current_browser_hotkey, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
+        
+        if hasattr(self, 'private_paste_hotkey') and self.private_paste_hotkey:
+            self.btn_record_paste_hotkey.configure(text=self.private_paste_hotkey, fg_color=config.COLORS.get("ACCENT", ["#3B82F6", "#3B82F6"])[0])
 
         return frame
 
@@ -959,7 +1057,7 @@ class SyncThingsApp(ctk.CTk):
         self.nav_dash.configure(text=utils.format_persian(self.tr("dashboard")))
         self.nav_connect.configure(text=utils.format_persian(self.tr("search_and_connect")))
         self.nav_settings.configure(text=utils.format_persian(self.tr("profile_settings")))
-        self.nav_browser.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")))
+        self.nav_browser.configure(text=utils.format_persian(self.tr("browser_sync", default="Private Sync")))
         # Update fonts in sidebar
         self.title_lbl.configure(font=self.get_main_font(24, "bold"))
         self.nav_dash.configure(font=self.get_main_font(15, "bold"))
@@ -1562,6 +1660,9 @@ class SyncThingsApp(ctk.CTk):
         self.after(0, self._handle_data_received, data_type, data)
 
     def _handle_data_received(self, data_type, data):
+        if hasattr(self, 'clipboard_manager') and data_type in (config.TYPE_TEXT, config.TYPE_IMAGE, config.TYPE_FILES, config.TYPE_SCREENSHOT, config.TYPE_SINGLE_FILE):
+            self.clipboard_manager.ignore_next = True
+
         if data_type == config.TYPE_TEXT:
             text = data.decode("utf-8")
             self.clipboard_manager.set_clipboard_text(text)

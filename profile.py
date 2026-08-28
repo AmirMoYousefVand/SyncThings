@@ -21,6 +21,7 @@ def load_profile(default_name):
     ext_mode = "exclude"
     max_file_size_mb = 100
     target_extensions = ""
+    private_paste_hotkey = ""
 
     if os.path.exists(CONFIG_FILE):
         try:
@@ -38,16 +39,17 @@ def load_profile(default_name):
                 ext_mode = config.get("ext_mode", ext_mode)
                 max_file_size_mb = config.get("max_file_size_mb", max_file_size_mb)
                 target_extensions = config.get("target_extensions", target_extensions)
+                private_paste_hotkey = config.get("private_paste_hotkey", private_paste_hotkey)
         except Exception:
             pass
 
     if not avatar_b64 and not avatar_path:
         avatar_b64, mini_avatar_b64 = generate_random_avatar()
-        save_profile(profile_name, avatar_path, avatar_b64, mini_avatar_b64, theme, lang, state, enable_size_limit, max_file_size_mb, enable_ext_limit, ext_mode, target_extensions)
+        save_profile(profile_name, avatar_path, avatar_b64, mini_avatar_b64, theme, lang, state, enable_size_limit, max_file_size_mb, enable_ext_limit, ext_mode, target_extensions, private_paste_hotkey)
 
-    return profile_name, avatar_path, avatar_b64, theme, lang, state, enable_size_limit, max_file_size_mb, enable_ext_limit, ext_mode, target_extensions
+    return profile_name, avatar_path, avatar_b64, theme, lang, state, enable_size_limit, max_file_size_mb, enable_ext_limit, ext_mode, target_extensions, private_paste_hotkey
 
-def save_profile(profile_name, avatar_path, avatar_b64=None, mini_avatar_b64=None, theme="Light", lang="en", state="zoomed", enable_size_limit=False, max_file_size_mb=100, enable_ext_limit=False, ext_mode="exclude", target_extensions=""):
+def save_profile(profile_name, avatar_path, avatar_b64=None, mini_avatar_b64=None, theme="Light", lang="en", state="zoomed", enable_size_limit=False, max_file_size_mb=100, enable_ext_limit=False, ext_mode="exclude", target_extensions="", private_paste_hotkey=""):
     """Saves profile data to the config file."""
     if mini_avatar_b64 is None and os.path.exists(CONFIG_FILE):
         try:
@@ -72,7 +74,7 @@ def save_profile(profile_name, avatar_path, avatar_b64=None, mini_avatar_b64=Non
     config = {
         "name": profile_name, "avatar": avatar_path, "avatar_b64": avatar_b64, "mini_avatar_b64": mini_avatar_b64,
         "theme": theme, "lang": lang, "state": state, "enable_size_limit": enable_size_limit,
-        "max_file_size_mb": max_file_size_mb, "enable_ext_limit": enable_ext_limit, "ext_mode": ext_mode, "target_extensions": target_extensions
+        "max_file_size_mb": max_file_size_mb, "enable_ext_limit": enable_ext_limit, "ext_mode": ext_mode, "target_extensions": target_extensions, "private_paste_hotkey": private_paste_hotkey
     }
     try:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
