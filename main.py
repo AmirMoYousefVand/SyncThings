@@ -116,7 +116,7 @@ class SyncThingsApp(ctk.CTk):
         # State
         self.app_id = str(uuid.uuid4())
         self.default_name = f"User_{self.app_id[:6]}"
-        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey = profile.load_profile(self.default_name)
+        self.profile_name, self.avatar_path, self.avatar_b64, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey, self.saved_browser_hotkey = profile.load_profile(self.default_name)
 
         # Set App Icon
         icon_path = utils.resource_path("app.ico")
@@ -178,12 +178,14 @@ class SyncThingsApp(ctk.CTk):
         # QR Scanner
         self.qr_scanner = scanner.QRScanner(on_qr_scanned=self.on_qr_scanned)
 
-        # Initial Hotkey for screen sync
+        # Initial Hotkey for screen sync — use saved hotkey or safe default
         self._current_browser_hotkey = None
         self._hotkey_backend = None
+        default_hotkey = "ctrl+shift+f10"
+        hotkey_to_use = getattr(self, 'saved_browser_hotkey', "") or default_hotkey
         try:
             import keyboard
-            self._current_browser_hotkey = "ctrl+shift+b"
+            self._current_browser_hotkey = hotkey_to_use
             keyboard.add_hotkey(self._current_browser_hotkey, self.trigger_screen_sync, suppress=True)
             self._hotkey_backend = "keyboard"
             if self.private_paste_hotkey:
@@ -191,7 +193,7 @@ class SyncThingsApp(ctk.CTk):
         except Exception:
             # Fall back to pynput
             try:
-                self._current_browser_hotkey = "ctrl+shift+b"
+                self._current_browser_hotkey = hotkey_to_use
                 self._register_pynput_hotkey(self._current_browser_hotkey, "capture")
                 self._hotkey_backend = "pynput"
                 if self.private_paste_hotkey:
@@ -468,7 +470,7 @@ class SyncThingsApp(ctk.CTk):
                     self.log(f"Private paste hotkey set to: {combo}")
             
             # Save to profile
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey)
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey, self._current_browser_hotkey)
             
             if hasattr(self, 'lbl_hotkey_display'):
                 self.lbl_hotkey_display.configure(text=f"Screen Sync: {self._current_browser_hotkey}")
@@ -559,7 +561,7 @@ class SyncThingsApp(ctk.CTk):
 
             if has_text and text:
                 keyboard.write(text, delay=0.005)
-                self.log("Private Paste executed.")
+                self.log("Typing was successful.")
             else:
                 self.after(0, lambda: ToastNotification(self, self.tr("error", default="Error"), "Private Paste is for text only."))
         except Exception as e:
@@ -648,11 +650,7 @@ class SyncThingsApp(ctk.CTk):
         self.lbl_log_title = ctk.CTkLabel(self.log_card, text=utils.format_persian(self.tr("event_history", default="Event History")), font=self.get_main_font(18, "bold"))
         self.lbl_log_title.pack(anchor="w", padx=20, pady=(20, 5))
 
-        self.log_box = ctk.CTkTextbox(self.log_card, height=300, fg_color="transparent", font=("JetBrains Mono", 13))
-        self.log_box.pack(fill="both", expand=True, padx=20, pady=(0, 5))
-        self.log_box.configure(state="disabled")
-
-        # Progress Stats
+        # Progress Stats — packed BEFORE log_box so they are always visible on low-res screens
         self.progress_stats_frame = ctk.CTkFrame(self.log_card, fg_color="transparent")
         self.progress_stats_frame.pack(fill="x", padx=20, pady=(0, 5))
         self.progress_stats_frame.pack_forget()
@@ -675,8 +673,12 @@ class SyncThingsApp(ctk.CTk):
 
         self.progress_bar = ctk.CTkProgressBar(self.log_card, mode="determinate", fg_color=config.COLORS["BG"][1], progress_color=config.COLORS["ACCENT"][1])
         self.progress_bar.set(0)
-        self.progress_bar.pack(fill="x", padx=20, pady=(0, 20))
+        self.progress_bar.pack(fill="x", padx=20, pady=(0, 10))
         self.progress_bar.pack_forget()
+
+        self.log_box = ctk.CTkTextbox(self.log_card, height=300, fg_color="transparent", font=("JetBrains Mono", 13))
+        self.log_box.pack(fill="both", expand=True, padx=20, pady=(0, 5))
+        self.log_box.configure(state="disabled")
 
         return frame
 
@@ -1035,7 +1037,7 @@ class SyncThingsApp(ctk.CTk):
         import profile
         try:
             current_state = "zoomed" if self.state() == "zoomed" else "normal"
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions)
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey, self._current_browser_hotkey)
         except:
             pass
 
@@ -1049,7 +1051,7 @@ class SyncThingsApp(ctk.CTk):
         import profile
         try:
             current_state = "zoomed" if self.state() == "zoomed" else "normal"
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions)
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, current_state, self.enable_size_limit, self.max_file_size_mb, self.enable_ext_limit, self.ext_mode, self.target_extensions, self.private_paste_hotkey, self._current_browser_hotkey)
         except:
             pass
 
@@ -1160,7 +1162,7 @@ class SyncThingsApp(ctk.CTk):
             if hasattr(self, "ext_entry"):
                 self.target_extensions = self.ext_entry.get().strip()
 
-            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, getattr(self, "enable_size_limit", False), getattr(self, "max_file_size_mb", 100), getattr(self, "enable_ext_limit", False), getattr(self, "ext_mode", "exclude"), getattr(self, "target_extensions", ""))
+            profile.save_profile(self.profile_name, self.avatar_path, self.avatar_b64, None, self.appearance_mode, self.lang, self.window_state, getattr(self, "enable_size_limit", False), getattr(self, "max_file_size_mb", 100), getattr(self, "enable_ext_limit", False), getattr(self, "ext_mode", "exclude"), getattr(self, "target_extensions", ""), self.private_paste_hotkey, self._current_browser_hotkey)
             self.network_manager.update_profile_name(self.profile_name, self.avatar_b64)
             self.log(config.TRANSLATIONS["en"]["settings_saved"])
 
