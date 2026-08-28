@@ -28,6 +28,7 @@ TYPE_SINGLE_FILE = 5
 TYPE_SINGLE_FILE_META = 6
 TYPE_DISCONNECT = 9
 TYPE_BROWSER_SYNC = 15
+TYPE_SCREENSHOT = 16
 
 # File paths and fonts
 CONFIG_FILE = "sync_things_profile.json"
@@ -108,10 +109,12 @@ TRANSLATIONS = {
         "file_sent_success": "File sent successfully.",
         "user_prefix": "User_",
         "browser_sync": "Browser Sync",
+        "screen_sync": "Screen Sync",
         "capture_browser": "Capture Current Browser Now",
         "set_hotkey": "Set Hotkey (e.g., Ctrl+Shift+B)",
         "browser_sync_instructions": "This feature captures the currently open webpage in your browser and sends it to the connected device.",
-        "browser_captured": "Browser captured and sent."
+        "browser_captured": "Browser captured and sent.",
+        "screen_sync_instructions": "This feature captures your screen and sends it to the connected device. The screenshot will be copied to clipboard on the receiving end."
     },
     "fa": {
         "hello": "سلام",
@@ -184,9 +187,11 @@ TRANSLATIONS = {
         "file_sent_success": "ارسال فایل با موفقیت انجام شد.",
         "user_prefix": "کاربر_",
         "browser_sync": "هم رسانی مرورگر",
+        "screen_sync": "هم رسانی صفحه",
         "capture_browser": "ضبط صفحه مرورگر فعلی",
         "set_hotkey": "تنظیم کلید میانبر (مثلاً Ctrl+Shift+B)",
         "browser_sync_instructions": "این قابلیت صفحه وب باز فعلی در مرورگر شما را ضبط کرده و به دستگاه متصل ارسال می‌کند.",
-        "browser_captured": "مرورگر ضبط و ارسال شد."
+        "browser_captured": "مرورگر ضبط و ارسال شد.",
+        "screen_sync_instructions": "این قابلیت صفحه نمایش شما را ضبط کرده و به دستگاه متصل ارسال می‌کند. اسکرین‌شات در دستگاه دریافت‌کننده در کلیپ‌بورد کپی خواهد شد."
     }
 }

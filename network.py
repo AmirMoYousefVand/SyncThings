@@ -463,10 +463,10 @@ class NetworkManager:
                 if size > 0:
                     import config
                     progress_cb = self.callbacks.get('on_progress')
-                    if data_type == config.TYPE_FILES or data_type == config.TYPE_SINGLE_FILE or data_type == config.TYPE_BROWSER_SYNC:
+                    if data_type == config.TYPE_FILES or data_type == config.TYPE_SINGLE_FILE or data_type == config.TYPE_BROWSER_SYNC or data_type == config.TYPE_SCREENSHOT:
                         import tempfile
                         import os
-                        suffix = ".html" if data_type == config.TYPE_BROWSER_SYNC else ".tmp"
+                        suffix = ".html" if data_type == config.TYPE_BROWSER_SYNC else ".png" if data_type == config.TYPE_SCREENSHOT else ".tmp"
                         temp_file = tempfile.mktemp(suffix=suffix)
                         success = self.recv_to_file(conn, size, temp_file, progress_callback=progress_cb)
                         if not success and self.cancel_event.is_set():

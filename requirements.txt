@@ -11,6 +11,4 @@ python-bidi
 netifaces
 keyboard
 pynput
-uiautomation
-requests
-beautifulsoup4
+mss

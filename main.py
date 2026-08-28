@@ -178,13 +178,13 @@ class SyncThingsApp(ctk.CTk):
         # QR Scanner
         self.qr_scanner = scanner.QRScanner(on_qr_scanned=self.on_qr_scanned)
 
-        # Initial Hotkey for browser sync
+        # Initial Hotkey for screen sync
         self._current_browser_hotkey = None
         self._hotkey_backend = None
         try:
             import keyboard
             self._current_browser_hotkey = "ctrl+shift+b"
-            keyboard.add_hotkey(self._current_browser_hotkey, self.trigger_browser_sync, suppress=True)
+            keyboard.add_hotkey(self._current_browser_hotkey, self.trigger_screen_sync, suppress=True)
             self._hotkey_backend = "keyboard"
         except Exception:
             # Fall back to pynput
@@ -325,8 +325,7 @@ class SyncThingsApp(ctk.CTk):
         self.show_frame("dashboard")
 
     def update_browser_ui_text(self):
-        self.lbl_browser_title.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
-        self.btn_capture.configure(text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"))
+        self.lbl_browser_title.configure(text=utils.format_persian(self.tr("screen_sync", default="Screen Sync")), font=self.get_main_font(28, "bold"))
         if hasattr(self, 'btn_record_hotkey'):
             self.btn_record_hotkey.configure(text=utils.format_persian(self.tr("record_hotkey", default="Record Hotkey")))
 
@@ -423,7 +422,7 @@ class SyncThingsApp(ctk.CTk):
                 import keyboard
                 if hasattr(self, '_current_browser_hotkey') and self._current_browser_hotkey:
                     keyboard.remove_hotkey(self._current_browser_hotkey)
-                keyboard.add_hotkey(combo, self.trigger_browser_sync)
+                keyboard.add_hotkey(combo, self.trigger_screen_sync)
             elif backend == "pynput":
                 # Stop any previous pynput hotkey listener
                 if hasattr(self, '_pynput_hotkey_listener') and self._pynput_hotkey_listener is not None:
@@ -434,10 +433,10 @@ class SyncThingsApp(ctk.CTk):
                 # Create a new global hotkey listener with pynput
                 self._register_pynput_hotkey(combo)
             self._current_browser_hotkey = combo
-            self.log(f"Browser sync hotkey set to: {combo}")
+            self.log(f"Screen sync hotkey set to: {combo}")
             # Update dashboard hotkey label if it exists
             if hasattr(self, 'lbl_hotkey_display'):
-                self.lbl_hotkey_display.configure(text=f"Browser Sync: {combo}")
+                self.lbl_hotkey_display.configure(text=f"Screen Sync: {combo}")
         except Exception as e:
             self.log(f"Failed to set hotkey: {e}")
             self.btn_record_hotkey.configure(text="Record Hotkey", fg_color="gray25")
@@ -481,7 +480,7 @@ class SyncThingsApp(ctk.CTk):
                 self._pynput_held_modifiers.add(name)
             elif name == trigger_key:
                 if required_modifiers.issubset(self._pynput_held_modifiers):
-                    self.after(0, self.trigger_browser_sync)
+                    self.after(0, self.trigger_screen_sync)
 
         def on_release(key):
             name = get_key_name(key)
@@ -491,123 +490,48 @@ class SyncThingsApp(ctk.CTk):
         self._pynput_hotkey_listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
         self._pynput_hotkey_listener.start()
 
-    def trigger_browser_sync(self):
+    def trigger_screen_sync(self):
         if not self.network_manager.connected:
-            self.log("Cannot capture browser: Not connected to any device.")
+            self.log("Cannot capture screen: Not connected to any device.")
             return
-
-        self.log("Triggering browser capture in background...")
+        self.log("Triggering screenshot in background...")
         import threading
-        threading.Thread(target=self._capture_browser_thread, daemon=True).start()
+        threading.Thread(target=self._screenshot_thread, daemon=True).start()
 
-    def _capture_browser_thread(self):
+    def _screenshot_thread(self):
         try:
-            import uiautomation as auto
-            import requests
+            import mss
+            import mss.tools
+            import tempfile
             import os
 
-            self.log("Searching for active browser window...")
-            url = None
+            self.log("Taking screenshot...")
 
-            browser = auto.WindowControl(ClassName='Chrome_WidgetWin_1') # Works for Chrome/Edge
-            if not browser.Exists(0, 0):
-                browser = auto.WindowControl(ClassName='MozillaWindowClass') # Firefox
+            with mss.mss() as sct:
+                # Capture the entire screen (monitor 1 is the primary)
+                monitor = sct.monitors[1]
+                shot = sct.grab(monitor)
 
-            if not browser.Exists(0, 0):
-                self.log("Browser not found.")
-                return
+                # Convert to PNG
+                png_bytes = mss.tools.to_png(shot.rgb, shot.size)
 
-            # Simple heuristic: try to find an EditControl that might be the address bar
-            # Or Name="Address and search bar"
+            # Save to temp file
+            temp_file = os.path.join(os.environ.get("TEMP", "."), "screenshot_sync.png")
+            with open(temp_file, "wb") as f:
+                f.write(png_bytes)
+
+            # Send via network
+            self.network_manager.send_file_packet(config.TYPE_SCREENSHOT, temp_file)
+            self.log("Screenshot captured and sent.")
+
+            # Cleanup
             try:
-                addr_bar = browser.EditControl(Name="Address and search bar")
-                if not addr_bar.Exists(0, 0):
-                    addr_bar = browser.EditControl(Name="Search or enter web address")
-                if not addr_bar.Exists(0, 0):
-                    addr_bar = browser.EditControl() # Just any edit control as fallback
-                if addr_bar.Exists(0, 0):
-                    url = addr_bar.GetValuePattern().Value
+                os.remove(temp_file)
             except:
                 pass
 
-            if not url:
-                self.log("Could not find a valid URL in active browser.")
-                return
-
-            if not url.startswith("http"):
-                url = "https://" + url
-
-            self.log(f"Capturing URL: {url}")
-
-            try:
-                resp = requests.get(url, timeout=15, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                })
-
-                if resp.status_code != 200 or "login" in url.lower():
-                    raise Exception(f"Status code {resp.status_code} or login page")
-
-                from urllib.parse import urljoin
-                from bs4 import BeautifulSoup
-                import base64
-
-                soup = BeautifulSoup(resp.text, 'html.parser')
-
-                # Inline external CSS from <link rel="stylesheet">
-                for link in soup.find_all('link', rel='stylesheet'):
-                    href = link.get('href')
-                    if not href:
-                        continue
-                    css_url = urljoin(url, href)
-                    try:
-                        css_resp = requests.get(css_url, timeout=10, headers={'User-Agent': resp.headers.get('User-Agent', '')})
-                        if css_resp.status_code == 200:
-                            style_tag = soup.new_tag('style')
-                            style_tag.string = css_resp.text
-                            link.replace_with(style_tag)
-                    except Exception:
-                        pass
-
-                # Convert images to base64 data URIs
-                for img in soup.find_all('img'):
-                    src = img.get('src')
-                    if not src or src.startswith('data:'):
-                        continue
-                    img_url = urljoin(url, src)
-                    try:
-                        img_resp = requests.get(img_url, timeout=10, headers={'User-Agent': resp.headers.get('User-Agent', '')})
-                        if img_resp.status_code == 200:
-                            content_type = img_resp.headers.get('Content-Type', 'image/png').split(';')[0].strip()
-                            b64 = base64.b64encode(img_resp.content).decode('utf-8')
-                            img['src'] = f"data:{content_type};base64,{b64}"
-                    except Exception:
-                        pass
-
-                html_content = str(soup)
-                self.log("Built self-contained HTML with inlined CSS and images.")
-
-            except Exception as e:
-                self.log(f"Failed to build self-contained HTML: {e}. Trying fallback method...")
-                try:
-                    doc = browser.DocumentControl()
-                    if doc.Exists(0, 0):
-                        text = doc.Name
-                    else:
-                        text = "Failed to extract text from document."
-                    html_content = f"<html><body style='font-family: sans-serif; padding: 40px; font-size: 16px;'><h1>Captured from {url}</h1><pre>{text}</pre></body></html>"
-                except Exception as ex:
-                    self.log(f"Fallback method failed: {ex}")
-                    html_content = f"<html><body style='font-family: sans-serif; padding: 20px;'><a href='{url}'>{url}</a><br><br>Failed to capture page content.</body></html>"
-
-            temp_file = os.path.join(os.environ.get("TEMP", "."), "browser_sync_capture.html")
-            with open(temp_file, "w", encoding="utf-8") as f:
-                f.write(html_content)
-
-            self.network_manager.send_file_packet(config.TYPE_BROWSER_SYNC, temp_file)
-            self.log(self.tr("browser_captured", default="Browser captured and sent."))
-
         except Exception as e:
-            self.log(f"Browser capture error: {e}")
+            self.log(f"Screenshot error: {e}")
 
 
     def create_dashboard_frame(self):
@@ -629,7 +553,7 @@ class SyncThingsApp(ctk.CTk):
 
         hotkey_text = getattr(self, '_current_browser_hotkey', None)
         self.lbl_hotkey_display = ctk.CTkLabel(self.status_card,
-            text=f"Browser Sync: {hotkey_text}" if hotkey_text else "Browser Sync: Not set",
+            text=f"Screen Sync: {hotkey_text}" if hotkey_text else "Screen Sync: Not set",
             font=self.get_main_font(12), text_color="gray")
         self.lbl_hotkey_display.pack(pady=(0, 10))
 
@@ -758,10 +682,10 @@ class SyncThingsApp(ctk.CTk):
         frame = ctk.CTkFrame(self.main_container)
         frame.grid_columnconfigure(0, weight=1)
 
-        self.lbl_browser_title = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
+        self.lbl_browser_title = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("screen_sync", default="Screen Sync")), font=self.get_main_font(28, "bold"))
         self.lbl_browser_title.pack(pady=20)
 
-        instructions = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("browser_sync_instructions", default="This feature captures the currently open webpage in your browser and sends it to the connected device.")), font=self.get_main_font(14), wraplength=400)
+        instructions = ctk.CTkLabel(frame, text=utils.format_persian(self.tr("screen_sync_instructions", default="This feature captures your screen and sends it to the connected device. The screenshot will be copied to clipboard on the receiving end.")), font=self.get_main_font(14), wraplength=400)
         instructions.pack(pady=10)
 
         hotkey_frame = ctk.CTkFrame(frame, fg_color="transparent")
@@ -775,10 +699,6 @@ class SyncThingsApp(ctk.CTk):
                                                 fg_color="gray25", hover_color="gray40",
                                                 command=self._start_hotkey_record)
         self.btn_record_hotkey.pack(side="left", padx=10)
-
-        self.btn_capture = ctk.CTkButton(frame, text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"),
-                                         command=self.trigger_browser_sync)
-        self.btn_capture.pack(pady=30)
 
         return frame
 
@@ -1050,8 +970,7 @@ class SyncThingsApp(ctk.CTk):
             self.btn_github.configure(font=self.get_main_font(14, "bold"))
 
     def update_ui_text(self):
-        self.lbl_browser_title.configure(text=utils.format_persian(self.tr("browser_sync", default="Browser Sync")), font=self.get_main_font(28, "bold"))
-        self.btn_capture.configure(text=utils.format_persian(self.tr("capture_browser", default="Capture Current Browser Now")), font=self.get_main_font(16, "bold"))
+        self.lbl_browser_title.configure(text=utils.format_persian(self.tr("screen_sync", default="Screen Sync")), font=self.get_main_font(28, "bold"))
         self.lbl_dash_title.configure(text=utils.format_persian(self.tr("dashboard")), font=self.get_main_font(28, "bold"))
         self.lbl_log_title.configure(text=utils.format_persian(self.tr("event_history")), font=self.get_main_font(18, "bold"))
 
@@ -1692,6 +1611,31 @@ class SyncThingsApp(ctk.CTk):
                 import logging
                 logging.error(f"Failed to parse single file metadata: {e}")
                 self._last_single_filename = 'received_file'
+        elif data_type == config.TYPE_SCREENSHOT:
+            import os
+            from PIL import Image
+            import io
+            try:
+                # Load the image from the received file
+                image = Image.open(data)
+
+                # Copy to clipboard
+                import win32clipboard
+                output = io.BytesIO()
+                image.convert("RGB").save(output, "BMP")
+                data_clip = output.getvalue()[14:]
+                output.close()
+                win32clipboard.OpenClipboard()
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data_clip)
+                win32clipboard.CloseClipboard()
+
+                self.log("Screenshot received - ready to paste (Ctrl+V)")
+
+                # Cleanup temp file
+                os.remove(data)
+            except Exception as e:
+                self.log(f"Failed to process screenshot: {e}")
         elif data_type == config.TYPE_SINGLE_FILE:
             # Single file bypasses zip
             import os
