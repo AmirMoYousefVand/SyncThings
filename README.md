@@ -1,9 +1,15 @@
-# SyncThings
+# SyncThings v2.0.0
 
 SyncThings is a simple, lightweight, and modern cross-platform application to seamlessly share clipboard text, images, and files over your local network between devices. 
 
 ## Features
 
+- **Private Sync (Screen Sync)**: Global hotkey to silently capture the entire screen and automatically copy it to the receiver's clipboard without any traces.
+- **Private Paste**: Global hotkey to stealthily "type" clipboard text to bypass web copy/paste listeners and anti-cheat systems.
+- **File Restrictions**: Set limits on maximum file size and allowed/blocked extensions before sending.
+- **Transfer Controls**: Pause, Resume, and Cancel transfers in real-time, perfectly synced across both devices without dropping connections.
+- **LAN Discovery Auto-Fixes**: Automatically applies Windows Firewall rules and forces UDP broadcasts out the correct physical port for seamless offline LAN connection.
+- **RTL & UI Polish**: Full Right-to-Left support for Persian dialogs, automatic light/dark icon switching, and scrollable settings.
 - **Clipboard Sync**: Instantly share text and images copied to your clipboard.
 - **File Transfer**: Easily send single or multiple files by copying them.
 - **QR Code Pairing**: Connect effortlessly using a QR code.
