@@ -172,13 +172,7 @@ class SyncThingsApp(ctk.CTk):
         # Load Icons
         self._load_icons()
 
-        self.setup_sidebar()
-        self.setup_main_area()
-
-        # QR Scanner
-        self.qr_scanner = scanner.QRScanner(on_qr_scanned=self.on_qr_scanned)
-
-        # Initial Hotkey for screen sync — use saved hotkey or safe default
+        # Initialize hotkeys BEFORE UI setup — save_settings may run during widget creation
         self._current_browser_hotkey = None
         self._hotkey_backend = None
         default_hotkey = "ctrl+shift+f10"
@@ -200,6 +194,12 @@ class SyncThingsApp(ctk.CTk):
                     self._register_pynput_hotkey(self.private_paste_hotkey, "paste")
             except Exception:
                 self._current_browser_hotkey = None
+
+        self.setup_sidebar()
+        self.setup_main_area()
+
+        # QR Scanner
+        self.qr_scanner = scanner.QRScanner(on_qr_scanned=self.on_qr_scanned)
             
         # Start Discovery
         self.network_manager.start_discovery()
